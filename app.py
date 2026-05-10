@@ -11,11 +11,9 @@ import requests
 
 app = Flask(__name__)
 
-# Initialize scheduler for daily pre-cache
 scheduler = BackgroundScheduler()
 
 def daily_pre_fetch():
-    """Pre-fetch yesterday's data every day at midnight IST"""
     try:
         ist = pytz.timezone('Asia/Kolkata')
         yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
@@ -25,7 +23,6 @@ def daily_pre_fetch():
     except Exception as e:
         print(f"❌ [SCHEDULER] Pre-fetch failed: {str(e)}")
 
-# Start scheduler
 scheduler.add_job(daily_pre_fetch, 'cron', hour=0, minute=1, timezone='Asia/Kolkata')
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
@@ -317,6 +314,9 @@ def home():
                 color: #2d5016;
                 font-family: 'Courier New', monospace;
             }
+            .summary-item:last-child .summary-value {
+                color: #c62828;
+            }
             .ai-section {
                 margin-top: 24px;
                 padding: 20px;
@@ -327,8 +327,9 @@ def home():
             .ai-header {
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 12px;
                 margin-bottom: 12px;
+                flex-wrap: wrap;
             }
             .ai-header h3 {
                 font-size: 14px;
@@ -505,6 +506,7 @@ def home():
                 if (!currentReportData) return;
                 
                 const analysisDiv = document.getElementById('ai-content');
+                analysisDiv.style.display = 'block';
                 analysisDiv.innerHTML = '<div class="ai-loading"><div class="ai-spinner"></div><p>Claude is analyzing your data...</p></div>';
                 
                 try {
@@ -570,13 +572,12 @@ def view_report():
         </div>
         '''
         
-        # Count successful stores
         successful = sum(1 for item in report_data if item['entries'] > 0)
         
         if successful < 13:
             html += f'''
             <div class="info">
-                ⚠️ Partial data: {successful}/13 stores loaded. Some stores may have missing data.
+                ⚠️ Partial data: {successful}/13 stores loaded.
             </div>
             '''
         else:
@@ -637,6 +638,8 @@ def view_report():
         html += '</div>'
         
         net_collection = total_cash + total_card + total_upi
+        expense_pct = (total_expense / total_sale * 100) if total_sale > 0 else 0
+        
         html += f'''
         <div class="summary">
             <div class="summary-item">
@@ -657,7 +660,7 @@ def view_report():
             </div>
             <div class="summary-item">
                 <div class="summary-label">Total Expense</div>
-                <div class="summary-value" style="color: #c62828;">₹{total_expense:,.0f}</div>
+                <div class="summary-value">₹{total_expense:,.0f} ({expense_pct:.1f}%)</div>
             </div>
         </div>
         
@@ -667,7 +670,7 @@ def view_report():
                 <button class="ai-button" onclick="getAIAnalysis()">Analyze Data</button>
             </div>
             <div id="ai-content" style="display:none;"></div>
-            <p style="font-size: 11px; color: #666; margin-top: 8px;">Click above to get AI insights on your sales performance, expense trends, and recommendations.</p>
+            <p style="font-size: 11px; color: #666; margin-top: 8px;">Click above to get AI insights on sales performance, expense trends, and recommendations.</p>
         </div>
         
         <div class="timestamp">
@@ -696,11 +699,9 @@ def view_report():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """Send report data to Claude AI for analysis"""
     try:
         report_data = request.json
         
-        # Format data for Claude
         stores_summary = []
         for store in report_data['data']['stores']:
             if store['entries'] > 0:
@@ -726,14 +727,13 @@ STORE-WISE BREAKDOWN:
 {chr(10).join(stores_summary)}
 
 Please provide:
-1. Key findings (2-3 points)
-2. Stores that need attention (if any)
+1. Key findings (2-3 points about performance)
+2. Stores that need attention (if any underperforming)
 3. Expense observations
-4. Recommendations (2-3 actions)
+4. Recommendations (2-3 actionable items)
 
 Keep it concise and actionable. Use HTML formatting with <h4> for sections and <ul><li> for lists."""
 
-        # Call Claude API
         api_key = os.getenv("CLAUDE_API_KEY")
         if not api_key:
             return jsonify({"error": "Claude API key not configured"}), 500
@@ -759,8 +759,6 @@ Keep it concise and actionable. Use HTML formatting with <h4> for sections and <
         
         result = response.json()
         analysis_text = result['content'][0]['text']
-        
-        # Convert markdown to HTML
         analysis_html = analysis_text.replace('\n', '<br>')
         
         return jsonify({"analysis": analysis_html})
