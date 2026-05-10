@@ -81,12 +81,14 @@ def home():
     </html>
     """
 
-@app.route('/generate', methods=['POST'])
-def api_generate():
+@app.route('/report', methods=['GET'])
+def view_report():
+    from nkb_automation import fetch_all_stores, generate_report_text
     try:
-        thread = threading.Thread(target=run_report_background, daemon=True)
-        thread.start()
-        return "Report generation started", 200
+        today, report_data, total_cash, total_card, total_upi, total_sale, total_expense = fetch_all_stores()
+        report_text = generate_report_text(today, report_data, total_cash, total_card, total_upi, total_sale, total_expense)
+        html = f"<pre style='font-family: monospace; padding: 20px;'>{report_text}</pre>"
+        return html
     except Exception as e:
         return str(e), 500
 
