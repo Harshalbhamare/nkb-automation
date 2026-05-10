@@ -4,9 +4,6 @@ from google.oauth2.service_account import Credentials
 import os
 import json
 from dotenv import load_dotenv
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import pytz
 
@@ -37,10 +34,19 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
-def fetch_all_stores():
+def date_in_range(date_str, start_date, end_date):
+    """Check if date is within range. Dates in DD-MM-YYYY format."""
+    try:
+        date_obj = datetime.strptime(date_str.strip(), '%d-%m-%Y')
+        start_obj = datetime.strptime(start_date, '%d-%m-%Y')
+        end_obj = datetime.strptime(end_date, '%d-%m-%Y')
+        return start_obj <= date_obj <= end_obj
+    except:
+        return False
+
+def fetch_stores_by_date(start_date, end_date):
+    """Fetch data from all stores within date range. Dates in DD-MM-YYYY format."""
     gc = get_gspread_client()
-    ist = pytz.timezone("Asia/Kolkata")
-    today = datetime.now(ist).strftime("%d-%m-%Y")
     
     report_data = []
     total_cash = total_card = total_upi = total_sale = total_expense = 0
@@ -49,42 +55,56 @@ def fetch_all_stores():
         try:
             spreadsheet = gc.open_by_key(sheet_id)
             rows = spreadsheet.sheet1.get_all_records()
-            today_row = next((r for r in rows if r.get("DATE", "").strip() == today), None)
             
-            if today_row:
-                cash = float(today_row.get("CASH", 0) or 0)
-                card = float(today_row.get("Swip m/c", today_row.get("Card", 0)) or 0)
-                upi = float(today_row.get("UPI", 0) or 0)
-                sale = float(today_row.get("SALE", 0) or 0)
-                expense = float(today_row.get("EXP.", today_row.get("Expense", 0)) or 0)
-                remark = today_row.get("Exp REMARK", today_row.get("Remark", ""))
-                
-                total_cash += cash
-                total_card += card
-                total_upi += upi
-                total_sale += sale
-                total_expense += expense
-                
-                report_data.append({
-                    "store": store_name,
-                    "cash": cash,
-                    "card": card,
-                    "upi": upi,
-                    "sale": sale,
-                    "expense": expense,
-                    "remark": remark
-                })
-            else:
-                report_data.append({"store": store_name, "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0, "remark": "No entry"})
+            store_cash = store_card = store_upi = store_sale = store_expense = 0
+            store_entries = 0
+            
+            for row in rows:
+                date_val = row.get("DATE", "").strip()
+                if date_in_range(date_val, start_date, end_date):
+                    cash = float(row.get("CASH", 0) or 0)
+                    card = float(row.get("Swip m/c", row.get("Card", 0)) or 0)
+                    upi = float(row.get("UPI", 0) or 0)
+                    sale = float(row.get("SALE", 0) or 0)
+                    expense = float(row.get("EXP.", row.get("Expense", 0)) or 0)
+                    
+                    store_cash += cash
+                    store_card += card
+                    store_upi += upi
+                    store_sale += sale
+                    store_expense += expense
+                    store_entries += 1
+            
+            total_cash += store_cash
+            total_card += store_card
+            total_upi += store_upi
+            total_sale += store_sale
+            total_expense += store_expense
+            
+            report_data.append({
+                "store": store_name,
+                "cash": store_cash,
+                "card": store_card,
+                "upi": store_upi,
+                "sale": store_sale,
+                "expense": store_expense,
+                "entries": store_entries
+            })
         except Exception as e:
             print(f"Error reading {store_name}: {e}")
-            report_data.append({"store": store_name, "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0, "remark": f"Error: {str(e)[:30]}"})
+            report_data.append({
+                "store": store_name,
+                "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0,
+                "entries": 0
+            })
     
-    return today, report_data, total_cash, total_card, total_upi, total_sale, total_expense
+    return start_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense
 
-def generate_report_text(today, report_data, total_cash, total_card, total_upi, total_sale, total_expense):
+def generate_report_text(start_date, end_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense):
+    date_range = start_date if start_date == end_date else f"{start_date} to {end_date}"
+    
     report = f"""📊 NKB DAILY CLOSE CASH REPORT
-Date: {today}
+Date Range: {date_range}
 
 {"="*80}
 
@@ -93,12 +113,11 @@ STORE-BY-STORE BREAKDOWN:
 """
     
     for item in report_data:
-        report += f"{item['store']}\n"
-        report += f"  Cash: ₹{item['cash']:.0f} | Card: ₹{item['card']:.0f} | UPI: ₹{item['upi']:.0f}\n"
-        report += f"  Sale: ₹{item['sale']:.0f} | Expense: ₹{item['expense']:.0f}\n"
-        if item['remark']:
-            report += f"  Note: {item['remark']}\n"
-        report += "\n"
+        if item['entries'] > 0:
+            report += f"{item['store']} ({item['entries']} day{'s' if item['entries'] != 1 else ''})\n"
+            report += f"  Cash: ₹{item['cash']:,.0f} | Card: ₹{item['card']:,.0f} | UPI: ₹{item['upi']:,.0f}\n"
+            report += f"  Sale: ₹{item['sale']:,.0f} | Expense: ₹{item['expense']:,.0f}\n"
+            report += "\n"
     
     report += f"""{"="*80}
 
@@ -117,43 +136,3 @@ Report generated at: {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d-%
 """
     
     return report
-
-def send_email(report_text):
-    sender = "nkblifestylebrands@gmail.com"
-    password = os.getenv("GMAIL_APP_PASSWORD")
-    recipients = ["nkblifestylebrands@gmail.com", "harshal@nkb.in", "kapil@nkb.in", "kamlakar@nkb.in"]
-    
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"] = ", ".join(recipients)
-        msg["Subject"] = f"NKB Daily Close Cash - {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d-%m-%Y')}"
-        msg.attach(MIMEText(report_text, "plain"))
-        
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(sender, password)
-        server.send_message(msg)
-        server.quit()
-        
-        print("✅ Email sent successfully")
-        return True
-    except Exception as e:
-        print(f"❌ Email failed: {e}")
-        return False
-
-def generate_report():
-    print("\n🚀 Generating Report...\n")
-    try:
-        today, report_data, total_cash, total_card, total_upi, total_sale, total_expense = fetch_all_stores()
-        report_text = generate_report_text(today, report_data, total_cash, total_card, total_upi, total_sale, total_expense)
-        print(report_text)
-        send_email(report_text)
-        return True
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-if __name__ == "__main__":
-    generate_report()
