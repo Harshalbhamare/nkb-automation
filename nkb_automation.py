@@ -9,7 +9,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import pytz
-import requests
 
 load_dotenv()
 
@@ -38,70 +37,86 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
-def fetch_store_data(gc, store_name, sheet_id):
-    try:
-        spreadsheet = gc.open_by_key(sheet_id)
-        rows = spreadsheet.sheet1.get_all_records()
-        
-        ist = pytz.timezone("Asia/Kolkata")
-        today = datetime.now(ist).strftime("%d-%m-%Y")
-        
-        today_data = next((row for row in rows if row.get("DATE", "").strip() == today), None)
-        
-        if not today_data:
-            return {"store_name": store_name, "date": today, "cash": "—", "card": "—", "upi": "—", "sale": "—", "expense": "—", "remark": "No entry"}
-        
-        return {
-            "store_name": store_name,
-            "date": today,
-            "cash": str(today_data.get("CASH", "") or "0"),
-            "card": str(today_data.get("Swip m/c", "") or today_data.get("Card", "") or "0"),
-            "upi": str(today_data.get("UPI", "") or "0"),
-            "sale": str(today_data.get("SALE", "") or "0"),
-            "expense": str(today_data.get("EXP.", "") or today_data.get("Expense", "") or "0"),
-            "remark": str(today_data.get("Exp REMARK", "") or today_data.get("Remark", "") or "")
-        }
-    except Exception as e:
-        print(f"❌ {store_name}: {e}")
-        return None
-
-def fetch_all_stores_data(gc):
-    all_data = []
+def fetch_all_stores():
+    gc = get_gspread_client()
+    ist = pytz.timezone("Asia/Kolkata")
+    today = datetime.now(ist).strftime("%d-%m-%Y")
+    
+    report_data = []
+    total_cash = total_card = total_upi = total_sale = total_expense = 0
+    
     for store_name, sheet_id in STORES.items():
-        print(f"📄 {store_name}")
-        data = fetch_store_data(gc, store_name, sheet_id)
-        if data:
-            all_data.append(data)
-    return all_data
+        try:
+            spreadsheet = gc.open_by_key(sheet_id)
+            rows = spreadsheet.sheet1.get_all_records()
+            today_row = next((r for r in rows if r.get("DATE", "").strip() == today), None)
+            
+            if today_row:
+                cash = float(today_row.get("CASH", 0) or 0)
+                card = float(today_row.get("Swip m/c", today_row.get("Card", 0)) or 0)
+                upi = float(today_row.get("UPI", 0) or 0)
+                sale = float(today_row.get("SALE", 0) or 0)
+                expense = float(today_row.get("EXP.", today_row.get("Expense", 0)) or 0)
+                remark = today_row.get("Exp REMARK", today_row.get("Remark", ""))
+                
+                total_cash += cash
+                total_card += card
+                total_upi += upi
+                total_sale += sale
+                total_expense += expense
+                
+                report_data.append({
+                    "store": store_name,
+                    "cash": cash,
+                    "card": card,
+                    "upi": upi,
+                    "sale": sale,
+                    "expense": expense,
+                    "remark": remark
+                })
+            else:
+                report_data.append({"store": store_name, "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0, "remark": "No entry"})
+        except Exception as e:
+            print(f"Error reading {store_name}: {e}")
+            report_data.append({"store": store_name, "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0, "remark": f"Error: {str(e)[:30]}"})
+    
+    return today, report_data, total_cash, total_card, total_upi, total_sale, total_expense
 
-def generate_report_with_claude(stores_data):
-    api_key = os.getenv("CLAUDE_API_KEY")
+def generate_report_text(today, report_data, total_cash, total_card, total_upi, total_sale, total_expense):
+    report = f"""📊 NKB DAILY CLOSE CASH REPORT
+Date: {today}
+
+{"="*80}
+
+STORE-BY-STORE BREAKDOWN:
+
+"""
     
-    data_text = f"CLOSE CASH REPORT - {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d-%m-%Y')}\n\n"
-    for store in stores_data:
-        data_text += f"{store['store_name']}: Cash ₹{store['cash']} | Card ₹{store['card']} | UPI ₹{store['upi']} | Sale ₹{store['sale']} | Expense ₹{store['expense']}\n"
+    for item in report_data:
+        report += f"{item['store']}\n"
+        report += f"  Cash: ₹{item['cash']:.0f} | Card: ₹{item['card']:.0f} | UPI: ₹{item['upi']:.0f}\n"
+        report += f"  Sale: ₹{item['sale']:.0f} | Expense: ₹{item['expense']:.0f}\n"
+        if item['remark']:
+            report += f"  Note: {item['remark']}\n"
+        report += "\n"
     
-    prompt = f"Analyze this close cash data and create a brief professional report:\n\n{data_text}"
+    report += f"""{"="*80}
+
+TOTALS:
+  Total Cash: ₹{total_cash:,.0f}
+  Total Card: ₹{total_card:,.0f}
+  Total UPI: ₹{total_upi:,.0f}
+  Total Sale: ₹{total_sale:,.0f}
+  Total Expense: ₹{total_expense:,.0f}
+
+Net Collection: ₹{(total_cash + total_card + total_upi):,.0f}
+
+{"="*80}
+
+Report generated at: {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d-%m-%Y %H:%M:%S IST')}
+"""
     
-    response = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        },
-        json={
-            "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 800,
-            "messages": [{"role": "user", "content": prompt}]
-        }
-    )
-    
-    if response.status_code == 200:
-        return response.json()["content"][0]["text"]
-    else:
-        print(f"Claude API Error: {response.status_code} - {response.text}")
-        return "Report generation failed"
+    return report
 
 def send_email(report_text):
     sender = "nkblifestylebrands@gmail.com"
@@ -120,23 +135,24 @@ def send_email(report_text):
         server.send_message(msg)
         server.quit()
         
-        print(f"✅ Email sent")
+        print("✅ Email sent successfully")
         return True
     except Exception as e:
-        print(f"❌ Email: {e}")
+        print(f"❌ Email failed: {e}")
         return False
 
 def generate_report():
-    print("\n🚀 Starting Report Generation...\n")
+    print("\n🚀 Generating Report...\n")
     try:
-        gc = get_gspread_client()
-        stores_data = fetch_all_stores_data(gc)
-        report = generate_report_with_claude(stores_data)
-        print(report)
-        send_email(report)
+        today, report_data, total_cash, total_card, total_upi, total_sale, total_expense = fetch_all_stores()
+        report_text = generate_report_text(today, report_data, total_cash, total_card, total_upi, total_sale, total_expense)
+        print(report_text)
+        send_email(report_text)
         return True
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 if __name__ == "__main__":
