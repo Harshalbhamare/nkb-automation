@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from nkb_automation import fetch_stores_by_date
 from apscheduler.schedulers.background import BackgroundScheduler
 import os
 from datetime import datetime, timedelta
 import pytz
 import atexit
+import json
+import requests
 
 app = Flask(__name__)
 
@@ -291,7 +293,7 @@ def home():
             }
             @media (min-width: 768px) {
                 .summary {
-                    grid-template-columns: repeat(4, 1fr);
+                    grid-template-columns: repeat(5, 1fr);
                 }
             }
             .summary-item {
@@ -315,6 +317,87 @@ def home():
                 color: #2d5016;
                 font-family: 'Courier New', monospace;
             }
+            .ai-section {
+                margin-top: 24px;
+                padding: 20px;
+                background: linear-gradient(135deg, #f0f4ff 0%, #f9f5ff 100%);
+                border: 1px solid #e0d5ff;
+                border-radius: 8px;
+            }
+            .ai-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 12px;
+            }
+            .ai-header h3 {
+                font-size: 14px;
+                font-weight: 600;
+                color: #5b21b6;
+                margin: 0;
+            }
+            .ai-button {
+                background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+                color: white;
+                border: none;
+                padding: 10px 16px;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                width: auto;
+            }
+            .ai-button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+            }
+            .ai-loading {
+                text-align: center;
+                padding: 20px;
+                color: #666;
+            }
+            .ai-spinner {
+                border: 3px solid #f0f0f0;
+                border-top: 3px solid #7c3aed;
+                border-radius: 50%;
+                width: 30px;
+                height: 30px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 12px;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            .ai-content {
+                font-size: 13px;
+                line-height: 1.6;
+                color: #444;
+            }
+            .ai-content h4 {
+                color: #7c3aed;
+                margin: 12px 0 6px 0;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            .ai-content ul {
+                margin: 6px 0 12px 18px;
+                padding: 0;
+            }
+            .ai-content li {
+                margin: 4px 0;
+            }
+            .ai-error {
+                background: #fee2e2;
+                color: #991b1b;
+                padding: 12px;
+                border-radius: 6px;
+                font-size: 12px;
+                margin-top: 12px;
+            }
             .loading {
                 text-align: center;
                 padding: 40px 20px;
@@ -328,10 +411,6 @@ def home():
                 height: 40px;
                 animation: spin 1s linear infinite;
                 margin: 0 auto 16px;
-            }
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
             }
             .timestamp {
                 text-align: center;
@@ -386,6 +465,8 @@ def home():
         </div>
 
         <script>
+            let currentReportData = null;
+            
             function updateButtons(active) {
                 document.querySelectorAll('button').forEach(btn => {
                     btn.classList.remove('active');
@@ -412,10 +493,37 @@ def home():
                 
                 try {
                     const response = await fetch(url);
-                    const html = await response.text();
-                    report.innerHTML = html;
+                    const data = await response.json();
+                    currentReportData = data;
+                    report.innerHTML = data.html;
                 } catch (e) {
                     report.innerHTML = '<div class="error">Error: ' + e.message + '</div>';
+                }
+            }
+            
+            async function getAIAnalysis() {
+                if (!currentReportData) return;
+                
+                const analysisDiv = document.getElementById('ai-content');
+                analysisDiv.innerHTML = '<div class="ai-loading"><div class="ai-spinner"></div><p>Claude is analyzing your data...</p></div>';
+                
+                try {
+                    const response = await fetch('/analyze', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(currentReportData)
+                    });
+                    
+                    const result = await response.json();
+                    if (result.error) {
+                        analysisDiv.innerHTML = '<div class="ai-error">Error: ' + result.error + '</div>';
+                    } else {
+                        analysisDiv.innerHTML = '<div class="ai-content">' + result.analysis + '</div>';
+                    }
+                } catch (e) {
+                    analysisDiv.innerHTML = '<div class="ai-error">Error: ' + e.message + '</div>';
                 }
             }
         </script>
@@ -441,12 +549,12 @@ def view_report():
             end_date = today
         elif range_type == 'custom':
             if not custom_date:
-                return '<div class="error">Error: No date provided</div>'
+                return jsonify({"error": "No date provided"})
             try:
                 custom_date_obj = datetime.strptime(custom_date, '%Y-%m-%d')
                 start_date = end_date = custom_date_obj.strftime('%d-%m-%Y')
             except:
-                return '<div class="error">Invalid date format</div>'
+                return jsonify({"error": "Invalid date format"})
         else:
             yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
             start_date = end_date = yesterday
@@ -544,9 +652,22 @@ def view_report():
                 <div class="summary-value">₹{total_upi:,.0f}</div>
             </div>
             <div class="summary-item">
-                <div class="summary-label">Net</div>
+                <div class="summary-label">Net Collection</div>
                 <div class="summary-value">₹{net_collection:,.0f}</div>
             </div>
+            <div class="summary-item">
+                <div class="summary-label">Total Expense</div>
+                <div class="summary-value" style="color: #c62828;">₹{total_expense:,.0f}</div>
+            </div>
+        </div>
+        
+        <div class="ai-section">
+            <div class="ai-header">
+                <h3>✨ Claude AI Analysis</h3>
+                <button class="ai-button" onclick="getAIAnalysis()">Analyze Data</button>
+            </div>
+            <div id="ai-content" style="display:none;"></div>
+            <p style="font-size: 11px; color: #666; margin-top: 8px;">Click above to get AI insights on your sales performance, expense trends, and recommendations.</p>
         </div>
         
         <div class="timestamp">
@@ -554,10 +675,98 @@ def view_report():
         </div>
         '''
         
-        return html
+        return jsonify({
+            "html": html,
+            "data": {
+                "date": display_date,
+                "stores": report_data,
+                "totals": {
+                    "cash": total_cash,
+                    "card": total_card,
+                    "upi": total_upi,
+                    "sale": total_sale,
+                    "expense": total_expense,
+                    "net_collection": net_collection
+                }
+            }
+        })
     
     except Exception as e:
-        return f'<div class="error">Error: {str(e)}</div>'
+        return jsonify({"error": str(e)})
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    """Send report data to Claude AI for analysis"""
+    try:
+        report_data = request.json
+        
+        # Format data for Claude
+        stores_summary = []
+        for store in report_data['data']['stores']:
+            if store['entries'] > 0:
+                stores_summary.append(
+                    f"- {store['store']}: Sale ₹{store['sale']:,.0f}, Expense ₹{store['expense']:,.0f}, "
+                    f"Cash ₹{store['cash']:,.0f}, Card ₹{store['card']:,.0f}, UPI ₹{store['upi']:,.0f}"
+                )
+        
+        totals = report_data['data']['totals']
+        expense_percentage = (totals['expense'] / totals['sale'] * 100) if totals['sale'] > 0 else 0
+        
+        prompt = f"""Analyze this NKB Store Close Cash report for {report_data['data']['date']} and provide insights:
+
+SUMMARY:
+- Total Sale: ₹{totals['sale']:,.0f}
+- Total Expense: ₹{totals['expense']:,.0f} ({expense_percentage:.1f}% of sales)
+- Net Collection: ₹{totals['net_collection']:,.0f}
+  - Cash: ₹{totals['cash']:,.0f}
+  - Card: ₹{totals['card']:,.0f}
+  - UPI: ₹{totals['upi']:,.0f}
+
+STORE-WISE BREAKDOWN:
+{chr(10).join(stores_summary)}
+
+Please provide:
+1. Key findings (2-3 points)
+2. Stores that need attention (if any)
+3. Expense observations
+4. Recommendations (2-3 actions)
+
+Keep it concise and actionable. Use HTML formatting with <h4> for sections and <ul><li> for lists."""
+
+        # Call Claude API
+        api_key = os.getenv("CLAUDE_API_KEY")
+        if not api_key:
+            return jsonify({"error": "Claude API key not configured"}), 500
+        
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": api_key
+            },
+            json={
+                "model": "claude-opus-4-20250805",
+                "max_tokens": 1024,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            },
+            timeout=30
+        )
+        
+        if response.status_code != 200:
+            return jsonify({"error": f"Claude API error: {response.status_code}"}), 500
+        
+        result = response.json()
+        analysis_text = result['content'][0]['text']
+        
+        # Convert markdown to HTML
+        analysis_html = analysis_text.replace('\n', '<br>')
+        
+        return jsonify({"analysis": analysis_html})
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
