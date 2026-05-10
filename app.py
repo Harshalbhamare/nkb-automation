@@ -742,7 +742,8 @@ Keep it concise and actionable. Use HTML formatting with <h4> for sections and <
             "https://api.anthropic.com/v1/messages",
             headers={
                 "Content-Type": "application/json",
-                "x-api-key": api_key
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01"
             },
             json={
                 "model": "claude-3-5-sonnet-20241022",
