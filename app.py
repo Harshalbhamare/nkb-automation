@@ -1,11 +1,32 @@
 #!/usr/bin/env python3
 from flask import Flask, request
 from nkb_automation import fetch_stores_by_date
+from apscheduler.schedulers.background import BackgroundScheduler
 import os
 from datetime import datetime, timedelta
 import pytz
+import atexit
 
 app = Flask(__name__)
+
+# Initialize scheduler for daily pre-cache
+scheduler = BackgroundScheduler()
+
+def daily_pre_fetch():
+    """Pre-fetch yesterday's data every day at midnight IST"""
+    try:
+        ist = pytz.timezone('Asia/Kolkata')
+        yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
+        print(f"\n⏰ [SCHEDULER] Starting daily pre-fetch for {yesterday}...")
+        fetch_stores_by_date(yesterday, yesterday)
+        print(f"✅ [SCHEDULER] Daily pre-fetch complete - data cached for instant access")
+    except Exception as e:
+        print(f"❌ [SCHEDULER] Pre-fetch failed: {str(e)}")
+
+# Start scheduler
+scheduler.add_job(daily_pre_fetch, 'cron', hour=0, minute=1, timezone='Asia/Kolkata')
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
 
 @app.route('/', methods=['GET'])
 def home():
@@ -151,6 +172,16 @@ def home():
                 font-size: 13px;
                 color: #666;
                 font-weight: 500;
+            }
+            .cache-badge {
+                display: inline-block;
+                background: #d4edda;
+                color: #155724;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+                margin-top: 8px;
+                font-weight: 600;
             }
             .store-grid {
                 display: grid;
@@ -318,6 +349,15 @@ def home():
                 border-left: 4px solid #c62828;
                 font-size: 13px;
             }
+            .info {
+                background: #e3f2fd;
+                color: #1565c0;
+                padding: 12px;
+                border-radius: 6px;
+                margin-bottom: 16px;
+                border-left: 4px solid #1565c0;
+                font-size: 12px;
+            }
         </style>
     </head>
     <body>
@@ -420,7 +460,23 @@ def view_report():
             <div class="report-title">Close Cash Report</div>
             <div class="report-date">{display_date}</div>
         </div>
+        '''
         
+        # Count successful stores
+        successful = sum(1 for item in report_data if item['entries'] > 0)
+        
+        if successful < 13:
+            html += f'''
+            <div class="info">
+                ⚠️ Partial data: {successful}/13 stores loaded. Some stores may have missing data.
+            </div>
+            '''
+        else:
+            html += '''
+            <div class="cache-badge">✅ Complete data cached</div>
+            '''
+        
+        html += '''
         <div class="store-grid">
         '''
         
