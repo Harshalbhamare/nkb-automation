@@ -18,216 +18,266 @@ def home():
         <title>NKB Close Cash Report</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
+            html, body { height: 100%; }
             body { 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-                padding: 20px;
-                min-height: 100vh;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: #f5f5f5;
+                color: #1a1a1a;
             }
             .container { 
                 max-width: 1200px;
                 margin: 0 auto;
                 background: white;
-                border-radius: 12px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                overflow: hidden;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
             }
             .header {
-                background: linear-gradient(135deg, #d4a574 0%, #b8905f 100%);
-                padding: 30px;
+                background: linear-gradient(135deg, #8b6914 0%, #c99a6e 100%);
+                padding: 24px 16px;
                 color: white;
                 text-align: center;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             }
             .header h1 { 
-                font-size: 36px;
-                margin-bottom: 5px;
-                font-weight: 700;
+                font-size: 28px;
+                margin-bottom: 4px;
+                font-weight: 600;
+                letter-spacing: -0.5px;
             }
             .header p {
-                font-size: 14px;
+                font-size: 13px;
                 opacity: 0.9;
             }
             .controls {
-                padding: 30px;
-                background: #f9f9f9;
-                border-bottom: 2px solid #f0f0f0;
+                padding: 20px 16px;
+                background: #fafafa;
+                border-bottom: 1px solid #e0e0e0;
+                position: sticky;
+                top: 0;
+                z-index: 10;
             }
             .controls-title {
-                font-size: 12px;
-                font-weight: 700;
+                font-size: 11px;
+                font-weight: 600;
                 text-transform: uppercase;
-                letter-spacing: 1px;
-                color: #888;
-                margin-bottom: 15px;
+                letter-spacing: 0.8px;
+                color: #666;
+                margin-bottom: 12px;
             }
             .button-group {
                 display: flex;
-                gap: 12px;
+                gap: 8px;
                 flex-wrap: wrap;
-                margin-bottom: 20px;
                 align-items: center;
             }
             button {
-                padding: 12px 24px;
-                border: none;
+                padding: 10px 16px;
+                border: 1px solid #d4a574;
+                background: white;
+                color: #8b6914;
                 border-radius: 6px;
-                font-size: 14px;
+                font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                transition: all 0.3s ease;
-                background: #d4a574;
-                color: white;
+                transition: all 0.2s ease;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
-                box-shadow: 0 4px 15px rgba(212, 165, 116, 0.3);
+                flex: 1;
+                min-width: 100px;
             }
             button:hover {
-                background: #b8905f;
-                transform: translateY(-2px);
-                box-shadow: 0 6px 20px rgba(212, 165, 116, 0.4);
+                background: #f5f5f5;
+                border-color: #8b6914;
             }
             button:active {
-                transform: translateY(0);
-                box-shadow: 0 2px 10px rgba(212, 165, 116, 0.2);
+                background: #efefef;
             }
             button.active {
-                background: #8b5a00;
-                box-shadow: 0 4px 15px rgba(139, 90, 0, 0.4);
+                background: #8b6914;
+                color: white;
+                border-color: #8b6914;
             }
             input[type="date"] {
-                padding: 10px 15px;
-                border: 2px solid #d4a574;
+                padding: 10px 12px;
+                border: 1px solid #d0d0d0;
                 border-radius: 6px;
-                font-size: 14px;
-                transition: all 0.3s ease;
+                font-size: 12px;
+                flex: 1;
+                min-width: 130px;
             }
             input[type="date"]:focus {
                 outline: none;
-                border-color: #b8905f;
-                box-shadow: 0 0 0 3px rgba(212, 165, 116, 0.1);
+                border-color: #8b6914;
+                box-shadow: 0 0 0 2px rgba(139, 105, 20, 0.1);
             }
             .report-container {
-                padding: 30px;
-                background: white;
+                flex: 1;
+                padding: 20px 16px;
+                overflow: auto;
             }
             .report-header {
                 text-align: center;
-                margin-bottom: 30px;
-                border-bottom: 3px solid #d4a574;
-                padding-bottom: 20px;
+                margin-bottom: 24px;
+                padding-bottom: 16px;
+                border-bottom: 2px solid #8b6914;
             }
             .report-title {
-                font-size: 24px;
-                font-weight: 700;
+                font-size: 20px;
+                font-weight: 600;
                 color: #1a1a1a;
-                margin-bottom: 5px;
+                margin-bottom: 4px;
             }
             .report-date {
-                font-size: 14px;
-                color: #888;
+                font-size: 13px;
+                color: #666;
                 font-weight: 500;
             }
-            .store-table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 30px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            .store-grid {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 12px;
+                margin-bottom: 24px;
+            }
+            @media (min-width: 640px) {
+                .store-grid {
+                    grid-template-columns: repeat(2, 1fr);
+                }
+            }
+            @media (min-width: 1024px) {
+                .store-grid {
+                    grid-template-columns: repeat(3, 1fr);
+                }
+                .report-container {
+                    padding: 30px;
+                }
+            }
+            .store-card {
+                border: 1px solid #e0e0e0;
                 border-radius: 8px;
+                background: white;
                 overflow: hidden;
+                transition: all 0.2s ease;
             }
-            .store-table thead {
-                background: #2d2d2d;
-                color: white;
+            .store-card:hover {
+                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                border-color: #d4a574;
             }
-            .store-table th {
-                padding: 15px;
-                text-align: left;
-                font-size: 12px;
-                font-weight: 700;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                border-bottom: 3px solid #d4a574;
+            .store-card.no-data {
+                opacity: 0.6;
             }
-            .store-table td {
-                padding: 15px;
-                border-bottom: 1px solid #f0f0f0;
-                font-size: 14px;
-            }
-            .store-table tbody tr {
-                transition: background 0.2s ease;
-            }
-            .store-table tbody tr:hover {
+            .store-header {
                 background: #f9f9f9;
-            }
-            .store-table tbody tr:nth-child(even) {
-                background: #fafafa;
+                padding: 12px 14px;
+                border-bottom: 1px solid #e0e0e0;
             }
             .store-name {
                 font-weight: 600;
+                font-size: 14px;
                 color: #1a1a1a;
+                margin: 0;
             }
-            .amount {
-                text-align: right;
-                font-weight: 500;
-                color: #d4a574;
-                font-family: 'Courier New', monospace;
+            .store-body {
+                padding: 14px;
             }
-            .totals-row {
-                background: #2d2d2d;
-                color: white;
-                font-weight: 700;
+            .data-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 8px 0;
+                border-bottom: 1px solid #f5f5f5;
+                font-size: 13px;
             }
-            .totals-row td {
-                padding: 18px 15px;
+            .data-row:last-child {
                 border-bottom: none;
+                padding-bottom: 0;
             }
-            .remark {
-                font-size: 12px;
+            .data-label {
                 color: #666;
-                max-width: 300px;
-                white-space: normal;
+                font-weight: 500;
             }
-            .summary {
-                background: #f5f5f5;
-                padding: 20px;
-                border-radius: 8px;
-                margin-top: 20px;
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 15px;
+            .data-value {
+                color: #2d5016;
+                font-weight: 600;
+                font-family: 'Courier New', monospace;
+                text-align: right;
             }
-            .summary-item {
-                padding: 15px;
-                background: white;
-                border-left: 4px solid #d4a574;
-                border-radius: 4px;
+            .data-value.highlight {
+                color: #8b6914;
+                font-size: 14px;
             }
-            .summary-label {
-                font-size: 12px;
-                color: #888;
+            .remark-section {
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px solid #f5f5f5;
+            }
+            .remark-label {
+                font-size: 11px;
+                color: #999;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
-                margin-bottom: 5px;
+                margin-bottom: 4px;
+                font-weight: 600;
+            }
+            .remark-text {
+                font-size: 12px;
+                color: #666;
+                background: #fafafa;
+                padding: 8px;
+                border-radius: 4px;
+                word-break: break-word;
+            }
+            .no-data-text {
+                text-align: center;
+                color: #aaa;
+                padding: 20px 14px;
+                font-size: 13px;
+            }
+            .summary {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+                margin-bottom: 24px;
+            }
+            @media (min-width: 768px) {
+                .summary {
+                    grid-template-columns: repeat(4, 1fr);
+                }
+            }
+            .summary-item {
+                padding: 16px;
+                background: #fafafa;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                text-align: center;
+            }
+            .summary-label {
+                font-size: 11px;
+                color: #999;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 6px;
+                font-weight: 600;
             }
             .summary-value {
-                font-size: 20px;
+                font-size: 18px;
                 font-weight: 700;
-                color: #d4a574;
+                color: #2d5016;
                 font-family: 'Courier New', monospace;
             }
             .loading {
                 text-align: center;
-                padding: 40px;
-                color: #888;
+                padding: 40px 20px;
+                color: #666;
             }
             .spinner {
                 border: 3px solid #f0f0f0;
-                border-top: 3px solid #d4a574;
+                border-top: 3px solid #8b6914;
                 border-radius: 50%;
                 width: 40px;
                 height: 40px;
                 animation: spin 1s linear infinite;
-                margin: 0 auto 15px;
+                margin: 0 auto 16px;
             }
             @keyframes spin {
                 0% { transform: rotate(0deg); }
@@ -235,35 +285,35 @@ def home():
             }
             .timestamp {
                 text-align: center;
-                margin-top: 30px;
-                padding-top: 20px;
-                border-top: 1px solid #f0f0f0;
-                color: #888;
+                padding: 20px 16px;
+                border-top: 1px solid #e0e0e0;
+                color: #999;
                 font-size: 12px;
             }
             .error {
-                background: #ffe0e0;
-                color: #d32f2f;
-                padding: 15px;
-                border-radius: 6px;
-                margin-bottom: 20px;
-                border-left: 4px solid #d32f2f;
+                background: #ffebee;
+                color: #c62828;
+                padding: 16px;
+                border-radius: 8px;
+                margin-bottom: 16px;
+                border-left: 4px solid #c62828;
+                font-size: 13px;
             }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h1>📊 NKB Close Cash Report</h1>
-                <p>Daily sales & expense tracking across all 13 stores</p>
+                <h1>📊 NKB Close Cash</h1>
+                <p>Real-time sales & expense report</p>
             </div>
 
             <div class="controls">
-                <div class="controls-title">Select Date Range</div>
+                <div class="controls-title">Date Range</div>
                 <div class="button-group">
-                    <button onclick="generateReport('today')" class="active" id="btn-today">📅 Today</button>
-                    <button onclick="generateReport('yesterday')" id="btn-yesterday">📅 Yesterday</button>
-                    <button onclick="generateReport('mtd')" id="btn-mtd">📊 Month to Date</button>
+                    <button onclick="generateReport('today')" class="active" id="btn-today">Today</button>
+                    <button onclick="generateReport('yesterday')" id="btn-yesterday">Yesterday</button>
+                    <button onclick="generateReport('mtd')" id="btn-mtd">MTD</button>
                     <input type="date" id="customDate" onchange="generateReport('custom')" />
                 </div>
             </div>
@@ -271,7 +321,7 @@ def home():
             <div class="report-container" id="report">
                 <div class="loading">
                     <div class="spinner"></div>
-                    <p>Loading report...</p>
+                    <p>Loading...</p>
                 </div>
             </div>
         </div>
@@ -288,13 +338,13 @@ def home():
             
             async function generateReport(range) {
                 const report = document.getElementById('report');
-                report.innerHTML = '<div class="loading"><div class="spinner"></div><p>Generating report...</p></div>';
+                report.innerHTML = '<div class="loading"><div class="spinner"></div><p>Fetching from 13 stores...</p></div>';
                 
                 let url = '/report?range=' + range;
                 if (range === 'custom') {
                     const date = document.getElementById('customDate').value;
                     if (!date) {
-                        report.innerHTML = '<div class="error">❌ Please select a date</div>';
+                        report.innerHTML = '<div class="error">Please select a date</div>';
                         return;
                     }
                     url = '/report?range=custom&date=' + date;
@@ -307,7 +357,7 @@ def home():
                     const html = await response.text();
                     report.innerHTML = html;
                 } catch (e) {
-                    report.innerHTML = '<div class="error">❌ Error: ' + e.message + '</div>';
+                    report.innerHTML = '<div class="error">Error: ' + e.message + '</div>';
                 }
             }
             
@@ -337,12 +387,12 @@ def view_report():
             end_date = today
         elif range_type == 'custom':
             if not custom_date:
-                return '<div class="error">❌ Error: No date provided</div>'
+                return '<div class="error">Error: No date provided</div>'
             try:
                 custom_date_obj = datetime.strptime(custom_date, '%Y-%m-%d')
                 start_date = end_date = custom_date_obj.strftime('%d-%m-%Y')
-            except Exception as e:
-                return f'<div class="error">❌ Invalid date format</div>'
+            except:
+                return '<div class="error">Invalid date format</div>'
         else:
             start_date = end_date = today
         
@@ -352,59 +402,60 @@ def view_report():
         
         html = f'''
         <div class="report-header">
-            <div class="report-title">📊 NKB Daily Close Cash Report</div>
-            <div class="report-date">Date Range: {display_date}</div>
+            <div class="report-title">Close Cash Report</div>
+            <div class="report-date">{display_date}</div>
         </div>
         
-        <table class="store-table">
-            <thead>
-                <tr>
-                    <th>Store Name</th>
-                    <th>Cash</th>
-                    <th>Card</th>
-                    <th>UPI</th>
-                    <th>Total Sale</th>
-                    <th>Expense</th>
-                    <th>Remark</th>
-                </tr>
-            </thead>
-            <tbody>
+        <div class="store-grid">
         '''
         
         for item in report_data:
+            remark = item.get('remark', '-') or '-'
             if item['entries'] > 0:
                 html += f'''
-                <tr>
-                    <td class="store-name">{item['store']}</td>
-                    <td class="amount">₹{item['cash']:,.0f}</td>
-                    <td class="amount">₹{item['card']:,.0f}</td>
-                    <td class="amount">₹{item['upi']:,.0f}</td>
-                    <td class="amount">₹{item['sale']:,.0f}</td>
-                    <td class="amount">₹{item['expense']:,.0f}</td>
-                    <td class="remark">-</td>
-                </tr>
+                <div class="store-card">
+                    <div class="store-header">
+                        <p class="store-name">{item['store']}</p>
+                    </div>
+                    <div class="store-body">
+                        <div class="data-row">
+                            <span class="data-label">Cash</span>
+                            <span class="data-value">₹{item['cash']:,.0f}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Card</span>
+                            <span class="data-value">₹{item['card']:,.0f}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">UPI</span>
+                            <span class="data-value">₹{item['upi']:,.0f}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Sale</span>
+                            <span class="data-value highlight">₹{item['sale']:,.0f}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Expense</span>
+                            <span class="data-value">₹{item['expense']:,.0f}</span>
+                        </div>
+                        <div class="remark-section">
+                            <div class="remark-label">Remark</div>
+                            <div class="remark-text">{remark}</div>
+                        </div>
+                    </div>
+                </div>
                 '''
             else:
                 html += f'''
-                <tr style="opacity: 0.5;">
-                    <td class="store-name">{item['store']}</td>
-                    <td colspan="6" style="text-align: center; color: #aaa;">No data</td>
-                </tr>
+                <div class="store-card no-data">
+                    <div class="store-header">
+                        <p class="store-name">{item['store']}</p>
+                    </div>
+                    <div class="no-data-text">No data</div>
+                </div>
                 '''
         
-        html += f'''
-                <tr class="totals-row">
-                    <td>TOTALS</td>
-                    <td class="amount">₹{total_cash:,.0f}</td>
-                    <td class="amount">₹{total_card:,.0f}</td>
-                    <td class="amount">₹{total_upi:,.0f}</td>
-                    <td class="amount">₹{total_sale:,.0f}</td>
-                    <td class="amount">₹{total_expense:,.0f}</td>
-                    <td></td>
-                </tr>
-            </tbody>
-        </table>
-        '''
+        html += '</div>'
         
         net_collection = total_cash + total_card + total_upi
         html += f'''
@@ -422,20 +473,20 @@ def view_report():
                 <div class="summary-value">₹{total_upi:,.0f}</div>
             </div>
             <div class="summary-item">
-                <div class="summary-label">Net Collection</div>
+                <div class="summary-label">Net</div>
                 <div class="summary-value">₹{net_collection:,.0f}</div>
             </div>
         </div>
         
         <div class="timestamp">
-            Report generated: {datetime.now(ist).strftime('%d-%m-%Y %H:%M:%S IST')}
+            Generated: {datetime.now(ist).strftime('%d-%m-%Y %H:%M IST')}
         </div>
         '''
         
         return html
     
     except Exception as e:
-        return f'<div class="error">❌ Error: {str(e)}</div>'
+        return f'<div class="error">Error: {str(e)}</div>'
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
