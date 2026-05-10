@@ -1,309 +1,266 @@
 #!/usr/bin/env python3
 """
-NKB Style Brands - Close Cash Report Automation (Simplified)
-Reads all 13 Google Sheets, analyzes with Claude, sends email
+NKB Close Cash Report Generator v2
+Reads from 13 individual Google Sheets (one per store)
+Generates daily report via Claude API
+Sends via email at scheduled time
 """
 
 import gspread
 from google.oauth2.service_account import Credentials
 import os
+import json
+from dotenv import load_dotenv
 from anthropic import Anthropic
 import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
-from email.utils import formatdate
-import json
-import pytz
-from io import BytesIO
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
+import pytz
 
-# ============ CONFIGURATION ============
-GOOGLE_SHEETS_CREDS_JSON = os.getenv('GOOGLE_SHEETS_CREDS')
-CLAUDE_API_KEY = os.getenv('CLAUDE_API_KEY')
-GMAIL_EMAIL = 'nkblifestylebrands@gmail.com'
-GMAIL_PASSWORD = os.getenv('GMAIL_APP_PASSWORD')
+load_dotenv()
 
-# 13 Store sheets
-STORE_SHEETS = [
-    'COTTONKING Dadar E',
-    'CK Capital Mall',
-    'CK Maxus Mall',
-    'CK MN (S)',
-    'CK Nalasopara W',
-    'Cottonking Dhule',
-    'COTTONKING Indiranagar',
-    'COTTONKING Panchwati',
-    'Cottonking Pathdi. Ph.',
-    'DADAR West',
-    'Tyzer IndiraNagar',
-    'Tyzer Panchwati',
-    'Tyzer Shalimar'
-]
+# ============================================================================
+# 13 STORES WITH THEIR INDIVIDUAL GOOGLE SHEET URLS & IDS
+# ============================================================================
+STORES = {
+    "CK Capital Mall": "1TGHLTtylkANWkWClWBigP0d3Cb0wAoHm3aHIYKJ48Hg",
+    "CK Maxus Mall": "1ZFOt95ZM97F2BSxtgNW_8ScNlGQH26ZKSh3spYa53jM",
+    "CK MN (S)": "1fOg47nqANKUlE25I3bP1cY-mYrrNETTSStvDiXbXpXU",
+    "CK Nalasopara W": "1tKbIWs4ipKFLCsW5tnBoHd2YRERXKGG0WuLUi8Yyq7U",
+    "COTTONKING Dadar E": "1P6bn4_dG08OWFBixI8Jv4IlOZ87ahB_u4byWZwXAYRg",
+    "Cottonking Dhule": "1IcUsFEtd9BsvIbvt-82enDyaS-Z2M4whvIWQfl5Gzgg",
+    "COTTONKING Indiranagar": "19Jfi1O8OuRTjEGMHKQgecFwSTLhVYa8RqA6y5ZUXARg",
+    "COTTONKING Panchwati": "1QN53i3T85yTAOz0bDQb6m9yIXf_i-9Avce_t1SxnIno",
+    "Cottonking Pathdi. Ph.": "1MnwPX5LS-E4BCHJVl7IyWsGh5JNiWLEnZa4ShgY3R98",
+    "DADAR West": "1cxwUXz7AQadsHPDoA7zbsGFWmFXGN4iodwh1kTq3ais",
+    "Tyzer IndiraNagar": "1g25Mp8rLs-u_Wno_LePx-3FY8knvjgCxT1gqtNXMiGs",
+    "Tyzer Panchwati": "1yd0w8xEQOdrP2BWK5B3jmGSW_mgO2lbTU1T1h0gOPHk",
+    "Tyzer Shalimar": "1xKoldJMdxjBaExMPNRVpEznWkutkaUHX-B7ml2GGCXQ"
+}
 
-MASTER_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1P6bn4_dG08OWFBixI8Jv4IlOZ87ahB_u4byWZwXAYRg/edit'
-
-# ============ GOOGLE SHEETS CONNECTION ============
-def connect_google_sheets():
-    """Connect to Google Sheets using service account"""
-    creds_dict = json.loads(GOOGLE_SHEETS_CREDS_JSON)
+# ============================================================================
+# GOOGLE SHEETS AUTH
+# ============================================================================
+def get_gspread_client():
+    """Authenticate with Google Sheets using service account credentials"""
+    creds_json = os.getenv("GOOGLE_SHEETS_CREDS")
+    if not creds_json:
+        raise ValueError("GOOGLE_SHEETS_CREDS environment variable not set")
+    
+    creds_dict = json.loads(creds_json)
     creds = Credentials.from_service_account_info(
         creds_dict,
-        scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
     )
     return gspread.authorize(creds)
 
-# ============ FETCH DATA FROM SHEETS ============
-def fetch_store_data(gc, spreadsheet_url):
-    """Fetch today's close cash data from all 13 stores"""
+# ============================================================================
+# FETCH DATA FROM ONE STORE'S SHEET
+# ============================================================================
+def fetch_store_data(gc, store_name, sheet_id):
+    """
+    Fetch today's close cash data from one store's Google Sheet
+    Returns dict with store_name, cash, card, upi, sale, expense, remark
+    """
     try:
-        spreadsheet = gc.open_by_url(spreadsheet_url)
-    except:
-        sheet_key = spreadsheet_url.split('/d/')[1].split('/')[0]
-        spreadsheet = gc.open_by_key(sheet_key)
-    
-    stores_data = []
-    
-    for store_name in STORE_SHEETS:
-        try:
-            worksheet = spreadsheet.worksheet(store_name)
-            all_data = worksheet.get_all_values()
-            
-            # Find header row
-            header_row = None
-            for i, row in enumerate(all_data):
-                if 'DATE' in [cell.upper() for cell in row] or 'date' in [cell.lower() for cell in row]:
-                    header_row = i
-                    headers = [cell.strip() for cell in row]
-                    break
-            
-            if header_row is None:
-                continue
-            
-            # Get latest row
-            latest_row = None
-            for row in reversed(all_data[header_row+1:]):
-                if row and row[0].strip():
-                    latest_row = row
-                    break
-            
-            if not latest_row:
-                continue
-            
-            # Parse row
-            row_dict = {}
-            for j, header in enumerate(headers):
-                if j < len(latest_row):
-                    row_dict[header.strip()] = latest_row[j].strip()
-            
-            # Extract values
-            cash = float(row_dict.get('CASH', '0').replace(',', '')) if row_dict.get('CASH') else 0
-            card = float(row_dict.get('Swip m/c', '0').replace(',', '')) if row_dict.get('Swip m/c') else 0
-            upi = float(row_dict.get('UPI', '0').replace(',', '')) if row_dict.get('UPI') else 0
-            sale = float(row_dict.get('SALE', '0').replace(',', '')) if row_dict.get('SALE') else 0
-            exp = float(row_dict.get('EXP.', '0').replace(',', '')) if row_dict.get('EXP.') else 0
-            exp_remark = row_dict.get('Exp REMARK', '')
-            
-            stores_data.append({
-                'store': store_name,
-                'cash': cash,
-                'card': card,
-                'upi': upi,
-                'sale': sale,
-                'exp': exp,
-                'exp_remark': exp_remark,
-                'date': row_dict.get('DATE', '')
-            })
+        spreadsheet = gc.open_by_key(sheet_id)
+        worksheet = spreadsheet.sheet1  # First sheet
         
-        except Exception as e:
-            print(f"Error fetching {store_name}: {str(e)}")
-            continue
+        # Get all rows
+        rows = worksheet.get_all_records()
+        
+        if not rows:
+            print(f"⚠️  {store_name}: No data in sheet")
+            return None
+        
+        # Get today's date
+        ist = pytz.timezone("Asia/Kolkata")
+        today = datetime.now(ist).strftime("%d-%m-%Y")
+        
+        # Find today's row (search in DATE column)
+        today_data = None
+        for row in rows:
+            if row.get("DATE", "").strip() == today:
+                today_data = row
+                break
+        
+        if not today_data:
+            print(f"⚠️  {store_name}: No entry for {today}")
+            return {
+                "store_name": store_name,
+                "date": today,
+                "cash": "—",
+                "card": "—",
+                "upi": "—",
+                "sale": "—",
+                "expense": "—",
+                "remark": "No entry"
+            }
+        
+        # Extract columns (handle various spellings)
+        return {
+            "store_name": store_name,
+            "date": today,
+            "cash": today_data.get("CASH", "") or "0",
+            "card": today_data.get("Swip m/c", "") or today_data.get("Card", "") or "0",
+            "upi": today_data.get("UPI", "") or "0",
+            "sale": today_data.get("SALE", "") or "0",
+            "expense": today_data.get("EXP.", "") or today_data.get("Expense", "") or "0",
+            "remark": today_data.get("Exp REMARK", "") or today_data.get("Remark", "") or ""
+        }
     
-    return stores_data
+    except Exception as e:
+        print(f"❌ {store_name}: Error fetching data - {e}")
+        return None
 
-# ============ GENERATE HTML TABLE ============
-def generate_html_table(stores_data):
-    """Generate HTML table of close cash data"""
-    if not stores_data:
-        return ""
+# ============================================================================
+# FETCH ALL STORES' DATA
+# ============================================================================
+def fetch_all_stores_data(gc):
+    """Fetch data from all 13 stores"""
+    all_data = []
     
-    total_cash = sum(s['cash'] for s in stores_data)
-    total_card = sum(s['card'] for s in stores_data)
-    total_upi = sum(s['upi'] for s in stores_data)
-    total_sale = sum(s['sale'] for s in stores_data)
-    total_exp = sum(s['exp'] for s in stores_data)
+    for store_name, sheet_id in STORES.items():
+        print(f"📄 Reading {store_name}...")
+        data = fetch_store_data(gc, store_name, sheet_id)
+        if data:
+            all_data.append(data)
     
-    html = """
-    <table style="width:100%; border-collapse: collapse; margin: 20px 0;">
-    <tr style="background: #B8690A; color: white;">
-        <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">STORE</th>
-        <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">CASH</th>
-        <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">CARD</th>
-        <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">UPI</th>
-        <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">SALE</th>
-        <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">EXP / REMARK</th>
-    </tr>
-    """
-    
-    for store in stores_data:
-        html += f"""
-    <tr style="background: #f9f9f9;">
-        <td style="padding: 8px; border: 1px solid #ddd;">{store['store']}</td>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₹{store['cash']:,.0f}</td>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₹{store['card']:,.0f}</td>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₹{store['upi']:,.0f}</td>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: green; font-weight: bold;">₹{store['sale']:,.0f}</td>
-        <td style="padding: 8px; border: 1px solid #ddd; color: #d9534f;">-₹{store['exp']:,.0f} {store['exp_remark']}</td>
-    </tr>
-    """
-    
-    html += f"""
-    <tr style="background: #B8690A; color: white; font-weight: bold;">
-        <td style="padding: 10px; border: 1px solid #ddd;">TOTAL</td>
-        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">₹{total_cash:,.0f}</td>
-        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">₹{total_card:,.0f}</td>
-        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">₹{total_upi:,.0f}</td>
-        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">₹{total_sale:,.0f}</td>
-        <td style="padding: 10px; border: 1px solid #ddd;">-₹{total_exp:,.0f}</td>
-    </tr>
-    </table>
-    """
-    
-    return html
+    return all_data
 
-# ============ CLAUDE ANALYSIS ============
-def analyze_with_claude(stores_data):
-    """Use Claude API to analyze store performance"""
+# ============================================================================
+# GENERATE REPORT WITH CLAUDE
+# ============================================================================
+def generate_report_with_claude(stores_data):
+    """Use Claude API to generate a formatted report"""
     client = Anthropic()
     
-    data_text = "Store Performance Data:\n\n"
-    for store in sorted(stores_data, key=lambda x: x['sale'], reverse=True):
-        data_text += f"{store['store']}: Sale ₹{store['sale']:,.0f} | Cash ₹{store['cash']:,.0f} | Card ₹{store['card']:,.0f} | UPI ₹{store['upi']:,.0f} | Expense ₹{store['exp']:,.0f}\n"
+    # Format data for Claude
+    data_text = "CLOSE CASH REPORT - " + datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d-%m-%Y") + "\n\n"
     
-    prompt = f"""{data_text}
+    for store in stores_data:
+        data_text += f"{store['store_name']}:\n"
+        data_text += f"  Cash: ₹{store['cash']} | Card: ₹{store['card']} | UPI: ₹{store['upi']}\n"
+        data_text += f"  Sale: ₹{store['sale']} | Expense: ₹{store['expense']}\n"
+        if store['remark']:
+            data_text += f"  Remark: {store['remark']}\n"
+        data_text += "\n"
+    
+    prompt = f"""You are Harshal's business operations assistant. You have received close cash data from 13 retail stores.
 
-Please provide analysis with:
-1. **Top 5 & Bottom 5 stores** by sales
-2. **Underperformance alerts** (stores below average)
-3. **Expense analysis** (unusual spikes)
-4. **Payment methods** (cash vs card vs UPI breakdown)
-5. **Key insights** (3-4 actionable points)
+{data_text}
 
-Keep it concise and professional."""
+Create a professional, concise DAILY REPORT for the directors (Harshal, Kapil, Kamlakar) in this format:
 
-    message = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=1000,
+📊 DAILY CLOSE CASH REPORT
+Date: [today]
+
+🏪 STORE SUMMARY
+[List all 13 stores with their key metrics in a clean format]
+
+⚠️ FLAGS & ALERTS
+[Note any stores with unusually high/low sales, missing data, or high expenses]
+
+💰 TOTALS
+[Sum of all cash, card, UPI, sales, expenses]
+
+📝 KEY NOTES
+[Any patterns or observations worth noting]
+
+Keep it professional, clear, and actionable. Use emojis sparingly for emphasis."""
+
+    response = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1500,
         messages=[
             {"role": "user", "content": prompt}
         ]
     )
     
-    return message.content[0].text
+    return response.content[0].text
 
-# ============ EMAIL DELIVERY ============
-def send_email_report(stores_data, analysis):
-    """Send email with report and analysis"""
+# ============================================================================
+# SEND EMAIL
+# ============================================================================
+def send_email(report_text):
+    """Send report via Gmail"""
+    sender_email = "nkblifestylebrands@gmail.com"
+    app_password = os.getenv("GMAIL_APP_PASSWORD")
+    
+    recipients = [
+        "nkblifestylebrands@gmail.com",
+        "harshal@nkb.in",
+        "kapil@nkb.in",
+        "kamlakar@nkb.in"
+    ]
+    
+    if not app_password:
+        print("❌ GMAIL_APP_PASSWORD not set")
+        return False
+    
     try:
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = f"NKB Close Cash Report - {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d %b %Y')}"
-        msg['From'] = GMAIL_EMAIL
-        msg['To'] = 'nkblifestylebrands@gmail.com'
-        msg['Date'] = formatdate(localtime=True)
+        msg = MIMEMultipart()
+        msg["From"] = sender_email
+        msg["To"] = ", ".join(recipients)
+        msg["Subject"] = f"NKB Daily Close Cash Report - {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d-%m-%Y')}"
         
-        # Generate HTML table
-        html_table = generate_html_table(stores_data)
+        msg.attach(MIMEText(report_text, "plain"))
         
-        # Summary stats
-        total_sale = sum(s['sale'] for s in stores_data)
-        total_cash = sum(s['cash'] for s in stores_data)
-        total_card = sum(s['card'] for s in stores_data)
-        total_upi = sum(s['upi'] for s in stores_data)
-        total_exp = sum(s['exp'] for s in stores_data)
+        # Send via Gmail SMTP
+        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+        server.login(sender_email, app_password)
+        server.send_message(msg)
+        server.quit()
         
-        body = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #333; background: #f5f5f5;">
-        <div style="max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px;">
-        
-        <h2 style="color: #B8690A; border-bottom: 3px solid #B8690A; padding-bottom: 10px;">
-            📊 NKB Style Brands - Daily Close Cash Report
-        </h2>
-        
-        <p style="color: #666; font-size: 14px;">
-            <strong>Report Date:</strong> {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%A, %d %b %Y at %I:%M %p IST')}
-        </p>
-        
-        <div style="background: #f0f8ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
-        <h3 style="color: #B8690A; margin-top: 0;">📈 Quick Summary</h3>
-        <p>
-            <strong>Total Sale:</strong> ₹{total_sale:,.0f}<br>
-            <strong>Cash Collected:</strong> ₹{total_cash:,.0f}<br>
-            <strong>Card:</strong> ₹{total_card:,.0f}<br>
-            <strong>UPI:</strong> ₹{total_upi:,.0f}<br>
-            <strong>Total Expenses:</strong> ₹{total_exp:,.0f}
-        </p>
-        </div>
-        
-        <h3 style="color: #B8690A;">📋 All Stores Report</h3>
-        {html_table}
-        
-        <h3 style="color: #B8690A; margin-top: 30px;">🔍 Claude AI Analysis</h3>
-        <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #B8690A; border-radius: 3px;">
-        <pre style="white-space: pre-wrap; font-family: Arial; font-size: 13px; color: #333;">{analysis}</pre>
-        </div>
-        
-        <p style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 12px;">
-            <em>Automated report generated by NKB Close Cash Report System</em>
-        </p>
-        </div>
-        </body>
-        </html>
-        """
-        
-        msg.attach(MIMEText(body, 'html'))
-        
-        # Send email
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(GMAIL_EMAIL, GMAIL_PASSWORD)
-            server.send_message(msg)
-        
-        print("✅ Email sent successfully!")
+        print(f"✅ Email sent to {len(recipients)} recipients")
         return True
     
     except Exception as e:
-        print(f"❌ Email error: {str(e)}")
+        print(f"❌ Email failed: {e}")
         return False
 
-# ============ MAIN EXECUTION ============
+# ============================================================================
+# MAIN FLOW
+# ============================================================================
 def generate_report():
-    """Main function"""
-    print("🚀 Starting NKB Close Cash Report Generation...")
+    """Main function to generate and send report"""
+    print("\n🚀 Starting NKB Close Cash Report Generation...\n")
     
     try:
-        gc = connect_google_sheets()
-        print("✅ Connected to Google Sheets")
+        # Step 1: Connect to Google Sheets
+        print("🔗 Connecting to Google Sheets...")
+        gc = get_gspread_client()
+        print("✅ Connected to Google Sheets\n")
         
-        stores_data = fetch_store_data(gc, MASTER_SHEET_URL)
+        # Step 2: Fetch all stores' data
+        print("📚 Fetching data from all 13 stores...\n")
+        stores_data = fetch_all_stores_data(gc)
+        
         if not stores_data:
-            print("❌ No data found!")
+            print("❌ No data fetched from any store")
             return False
         
-        print(f"✅ Fetched data from {len(stores_data)} stores")
+        print(f"\n✅ Fetched data from {len(stores_data)} stores\n")
         
-        analysis = analyze_with_claude(stores_data)
-        print("✅ Claude analysis complete")
+        # Step 3: Generate report with Claude
+        print("🤖 Generating report with Claude AI...\n")
+        report = generate_report_with_claude(stores_data)
+        print("✅ Report generated\n")
         
-        send_email_report(stores_data, analysis)
-        print("✅ Report generation complete!")
+        # Step 4: Send email
+        print("📧 Sending email...\n")
+        send_email(report)
         
+        print("\n✅ Daily report generation complete!")
         return True
     
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"\n❌ Error: {e}")
         return False
 
-if __name__ == '__main__':
+# ============================================================================
+# FOR TESTING
+# ============================================================================
+if __name__ == "__main__":
     generate_report()
