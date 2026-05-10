@@ -78,7 +78,7 @@ def fetch_stores_by_date(start_date, end_date):
     
     if cache_key in CACHE:
         cached_time, cached_data = CACHE[cache_key]
-        if time.time() - cached_time < 300:
+        if time.time() - cached_time < 3600:
             return cached_data
     
     print(f"\n🔄 Fetching data for {start_date} to {end_date}...")
