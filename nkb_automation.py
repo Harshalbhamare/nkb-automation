@@ -4,8 +4,9 @@ from google.oauth2.service_account import Credentials
 import os
 import json
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
+import time
 
 load_dotenv()
 
@@ -25,6 +26,10 @@ STORES = {
     "Tyzer Shalimar": "1xKoldJMdxjBaExMPNRVpEznWkutkaUHX-B7ml2GGCXQ"
 }
 
+# Cache to avoid rate limits
+CACHE = {}
+CACHE_EXPIRY = 300  # 5 minutes
+
 def get_gspread_client():
     creds_json = os.getenv("GOOGLE_SHEETS_CREDS")
     creds_dict = json.loads(creds_json)
@@ -43,62 +48,92 @@ def date_in_range(date_str, start_date, end_date):
     except:
         return False
 
+def fetch_store_data(store_name, sheet_id):
+    """Fetch data from a single store sheet with retry logic"""
+    try:
+        gc = get_gspread_client()
+        spreadsheet = gc.open_by_key(sheet_id)
+        rows = spreadsheet.sheet1.get_all_records()
+        return rows
+    except Exception as e:
+        if '429' in str(e):  # Rate limited
+            print(f"Rate limited reading {store_name}. Waiting 2 seconds...")
+            time.sleep(2)
+            try:
+                gc = get_gspread_client()
+                spreadsheet = gc.open_by_key(sheet_id)
+                rows = spreadsheet.sheet1.get_all_records()
+                return rows
+            except:
+                print(f"Failed again on {store_name}")
+                return []
+        else:
+            print(f"Error reading {store_name}: {e}")
+            return []
+
 def fetch_stores_by_date(start_date, end_date):
-    gc = get_gspread_client()
+    """Fetch data from all stores with caching"""
+    
+    # Check cache
+    cache_key = f"{start_date}_{end_date}"
+    if cache_key in CACHE:
+        cached_time, cached_data = CACHE[cache_key]
+        if time.time() - cached_time < CACHE_EXPIRY:
+            return cached_data
     
     report_data = []
     total_cash = total_card = total_upi = total_sale = total_expense = 0
     
     for store_name, sheet_id in STORES.items():
-        try:
-            spreadsheet = gc.open_by_key(sheet_id)
-            rows = spreadsheet.sheet1.get_all_records()
-            
-            store_cash = store_card = store_upi = store_sale = store_expense = 0
-            store_entries = 0
-            
-            for row in rows:
-                date_val = row.get("DATE", "").strip()
-                if date_in_range(date_val, start_date, end_date):
-                    try:
-                        cash = float(row.get("CASH", 0) or 0)
-                        card = float(row.get("Swip m/c", row.get("Card", 0)) or 0)
-                        upi = float(row.get("UPI", 0) or 0)
-                        sale = float(row.get("SALE", 0) or 0)
-                        expense = float(row.get("EXP.", row.get("Expense", 0)) or 0)
-                        
-                        store_cash += cash
-                        store_card += card
-                        store_upi += upi
-                        store_sale += sale
-                        store_expense += expense
-                        store_entries += 1
-                    except:
-                        pass
-            
-            total_cash += store_cash
-            total_card += store_card
-            total_upi += store_upi
-            total_sale += store_sale
-            total_expense += store_expense
-            
-            report_data.append({
-                "store": store_name,
-                "cash": store_cash,
-                "card": store_card,
-                "upi": store_upi,
-                "sale": store_sale,
-                "expense": store_expense,
-                "entries": store_entries
-            })
-        except Exception as e:
-            report_data.append({
-                "store": store_name,
-                "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0,
-                "entries": 0
-            })
+        rows = fetch_store_data(store_name, sheet_id)
+        
+        store_cash = store_card = store_upi = store_sale = store_expense = 0
+        store_entries = 0
+        
+        for row in rows:
+            date_val = row.get("DATE", "").strip()
+            if date_in_range(date_val, start_date, end_date):
+                try:
+                    cash = float(row.get("CASH", 0) or 0)
+                    card = float(row.get("Swip m/c", row.get("Card", 0)) or 0)
+                    upi = float(row.get("UPI", 0) or 0)
+                    sale = float(row.get("SALE", 0) or 0)
+                    expense = float(row.get("EXP.", row.get("Expense", 0)) or 0)
+                    
+                    store_cash += cash
+                    store_card += card
+                    store_upi += upi
+                    store_sale += sale
+                    store_expense += expense
+                    store_entries += 1
+                except:
+                    pass
+        
+        total_cash += store_cash
+        total_card += store_card
+        total_upi += store_upi
+        total_sale += store_sale
+        total_expense += store_expense
+        
+        report_data.append({
+            "store": store_name,
+            "cash": store_cash,
+            "card": store_card,
+            "upi": store_upi,
+            "sale": store_sale,
+            "expense": store_expense,
+            "entries": store_entries
+        })
+        
+        # Small delay between reads to avoid rate limiting
+        time.sleep(0.5)
     
-    return start_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense
+    result = (start_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense)
+    
+    # Cache the result
+    CACHE[cache_key] = (time.time(), result)
+    
+    return result
 
 def generate_report_text(start_date, end_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense):
     date_range = start_date if start_date == end_date else f"{start_date} to {end_date}"
