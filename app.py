@@ -2,8 +2,15 @@
 from flask import Flask, jsonify
 from nkb_automation import generate_report
 import os
+import threading
 
 app = Flask(__name__)
+
+def run_report_background():
+    try:
+        generate_report()
+    except Exception as e:
+        print(f"Background error: {e}")
 
 @app.route('/', methods=['GET'])
 def home():
@@ -56,12 +63,11 @@ def home():
                 
                 try {
                     const response = await fetch('/generate', {method: 'POST'});
-                    const text = await response.text();
                     
                     if (response.ok) {
-                        msg.innerHTML = '<div class="success">✅ Report generated and email sent!</div>';
+                        msg.innerHTML = '<div class="success">✅ Report generation started! Check email in 2 minutes.</div>';
                     } else {
-                        msg.innerHTML = '<div class="error">❌ Error: ' + text + '</div>';
+                        msg.innerHTML = '<div class="error">❌ Error: ' + response.statusText + '</div>';
                     }
                 } catch (e) {
                     msg.innerHTML = '<div class="error">❌ Error: ' + e.message + '</div>';
@@ -78,11 +84,9 @@ def home():
 @app.route('/generate', methods=['POST'])
 def api_generate():
     try:
-        result = generate_report()
-        if result:
-            return "Success", 200
-        else:
-            return "Generation failed", 500
+        thread = threading.Thread(target=run_report_background, daemon=True)
+        thread.start()
+        return "Report generation started", 200
     except Exception as e:
         return str(e), 500
 
