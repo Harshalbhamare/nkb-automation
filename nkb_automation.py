@@ -35,7 +35,6 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def date_in_range(date_str, start_date, end_date):
-    """Check if date is within range. Dates in DD-MM-YYYY format."""
     try:
         date_obj = datetime.strptime(date_str.strip(), '%d-%m-%Y')
         start_obj = datetime.strptime(start_date, '%d-%m-%Y')
@@ -45,7 +44,6 @@ def date_in_range(date_str, start_date, end_date):
         return False
 
 def fetch_stores_by_date(start_date, end_date):
-    """Fetch data from all stores within date range. Dates in DD-MM-YYYY format."""
     gc = get_gspread_client()
     
     report_data = []
@@ -62,18 +60,21 @@ def fetch_stores_by_date(start_date, end_date):
             for row in rows:
                 date_val = row.get("DATE", "").strip()
                 if date_in_range(date_val, start_date, end_date):
-                    cash = float(row.get("CASH", 0) or 0)
-                    card = float(row.get("Swip m/c", row.get("Card", 0)) or 0)
-                    upi = float(row.get("UPI", 0) or 0)
-                    sale = float(row.get("SALE", 0) or 0)
-                    expense = float(row.get("EXP.", row.get("Expense", 0)) or 0)
-                    
-                    store_cash += cash
-                    store_card += card
-                    store_upi += upi
-                    store_sale += sale
-                    store_expense += expense
-                    store_entries += 1
+                    try:
+                        cash = float(row.get("CASH", 0) or 0)
+                        card = float(row.get("Swip m/c", row.get("Card", 0)) or 0)
+                        upi = float(row.get("UPI", 0) or 0)
+                        sale = float(row.get("SALE", 0) or 0)
+                        expense = float(row.get("EXP.", row.get("Expense", 0)) or 0)
+                        
+                        store_cash += cash
+                        store_card += card
+                        store_upi += upi
+                        store_sale += sale
+                        store_expense += expense
+                        store_entries += 1
+                    except:
+                        pass
             
             total_cash += store_cash
             total_card += store_card
@@ -91,7 +92,6 @@ def fetch_stores_by_date(start_date, end_date):
                 "entries": store_entries
             })
         except Exception as e:
-            print(f"Error reading {store_name}: {e}")
             report_data.append({
                 "store": store_name,
                 "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0,
@@ -113,11 +113,13 @@ STORE-BY-STORE BREAKDOWN:
 """
     
     for item in report_data:
+        report += f"{item['store']}\n"
         if item['entries'] > 0:
-            report += f"{item['store']} ({item['entries']} day{'s' if item['entries'] != 1 else ''})\n"
             report += f"  Cash: ₹{item['cash']:,.0f} | Card: ₹{item['card']:,.0f} | UPI: ₹{item['upi']:,.0f}\n"
             report += f"  Sale: ₹{item['sale']:,.0f} | Expense: ₹{item['expense']:,.0f}\n"
-            report += "\n"
+        else:
+            report += f"  No data\n"
+        report += "\n"
     
     report += f"""{"="*80}
 
