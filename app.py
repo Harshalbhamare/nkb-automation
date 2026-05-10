@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-from flask import Flask, jsonify
-from nkb_automation import generate_report
+from flask import Flask, request
+from nkb_automation import fetch_stores_by_date, generate_report_text
 import os
-import threading
+from datetime import datetime, timedelta
+import pytz
 
 app = Flask(__name__)
-
-def run_report_background():
-    try:
-        generate_report()
-    except Exception as e:
-        print(f"Background error: {e}")
 
 @app.route('/', methods=['GET'])
 def home():
@@ -21,61 +16,57 @@ def home():
         <title>NKB Close Cash Report</title>
         <style>
             body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
-            .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
             h1 { color: #d4a574; }
-            .section { background: #f9f9f9; padding: 15px; margin: 15px 0; border-left: 4px solid #d4a574; }
-            button { background: #d4a574; color: white; border: none; padding: 12px 30px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; }
+            .filters { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
+            button { background: #d4a574; color: white; border: none; padding: 10px 20px; font-size: 14px; border-radius: 4px; cursor: pointer; }
             button:hover { background: #b8905f; }
-            button:disabled { background: #ccc; }
-            .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 4px; margin: 15px 0; }
-            .error { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 4px; margin: 15px 0; }
-            .info { font-size: 12px; color: #666; text-align: center; margin-top: 20px; }
+            button.active { background: #8b5a00; }
+            #report { background: #f9f9f9; padding: 20px; border-radius: 4px; margin-top: 20px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-wrap: break-word; max-height: 600px; overflow-y: auto; border: 1px solid #ddd; }
+            .loading { color: #666; text-align: center; }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>📊 NKB Close Cash Report</h1>
-            <p>Generate daily report with AI analysis</p>
+            <p>Select date range and generate report</p>
             
-            <div class="section">
-                <h3>🕐 Automatic Schedule</h3>
-                <p>Report automatically generates daily at <strong>12:00 AM IST</strong></p>
-                <p>Results emailed to: <strong>nkblifestylebrands@gmail.com</strong></p>
+            <div class="filters">
+                <button onclick="generateReport('today')" class="active">📅 Today</button>
+                <button onclick="generateReport('yesterday')">📅 Yesterday</button>
+                <button onclick="generateReport('mtd')">📊 Month to Date</button>
+                <input type="date" id="customDate" onchange="generateReport('custom')">
             </div>
             
-            <div id="message"></div>
-            
-            <button id="btn" onclick="generateReport()">🎯 Generate Report Now</button>
-            
-            <div class="info">
-                ✅ Reads all 13 stores | 📊 Analyzes data | 📧 Sends email
-            </div>
+            <div id="report" class="loading">Click a date range to generate report...</div>
         </div>
         
         <script>
-            async function generateReport() {
-                const btn = document.getElementById('btn');
-                const msg = document.getElementById('message');
+            async function generateReport(range) {
+                const report = document.getElementById('report');
+                report.textContent = '⏳ Generating report...';
                 
-                btn.disabled = true;
-                btn.textContent = '⏳ Generating...';
-                msg.innerHTML = '';
-                
-                try {
-                    const response = await fetch('/generate', {method: 'POST'});
-                    
-                    if (response.ok) {
-                        msg.innerHTML = '<div class="success">✅ Report generation started! Check email in 2 minutes.</div>';
-                    } else {
-                        msg.innerHTML = '<div class="error">❌ Error: ' + response.statusText + '</div>';
+                let url = '/report?range=' + range;
+                if (range === 'custom') {
+                    const date = document.getElementById('customDate').value;
+                    if (!date) {
+                        report.textContent = 'Please select a date';
+                        return;
                     }
-                } catch (e) {
-                    msg.innerHTML = '<div class="error">❌ Error: ' + e.message + '</div>';
+                    url = '/report?range=custom&date=' + date;
                 }
                 
-                btn.disabled = false;
-                btn.textContent = '🎯 Generate Report Now';
+                try {
+                    const response = await fetch(url);
+                    const text = await response.text();
+                    report.textContent = text;
+                } catch (e) {
+                    report.textContent = '❌ Error: ' + e.message;
+                }
             }
+            
+            // Load today's report on page load
+            generateReport('today');
         </script>
     </body>
     </html>
@@ -83,14 +74,36 @@ def home():
 
 @app.route('/report', methods=['GET'])
 def view_report():
-    from nkb_automation import fetch_all_stores, generate_report_text
     try:
-        today, report_data, total_cash, total_card, total_upi, total_sale, total_expense = fetch_all_stores()
-        report_text = generate_report_text(today, report_data, total_cash, total_card, total_upi, total_sale, total_expense)
-        html = f"<pre style='font-family: monospace; padding: 20px;'>{report_text}</pre>"
-        return html
+        range_type = request.args.get('range', 'today')
+        custom_date = request.args.get('date', None)
+        
+        ist = pytz.timezone('Asia/Kolkata')
+        today = datetime.now(ist).strftime('%d-%m-%Y')
+        
+        if range_type == 'today':
+            start_date = end_date = today
+        elif range_type == 'yesterday':
+            yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
+            start_date = end_date = yesterday
+        elif range_type == 'mtd':
+            start_date = datetime.now(ist).strftime('%d-%m-%Y').split('-')[0] + '-' + datetime.now(ist).strftime('%d-%m-%Y').split('-')[1] + '-' + datetime.now(ist).strftime('%d-%m-%Y').split('-')[2]
+            start_date = '01-' + datetime.now(ist).strftime('%m-%Y')
+            end_date = today
+        elif range_type == 'custom':
+            # Convert YYYY-MM-DD to DD-MM-YYYY
+            parts = custom_date.split('-')
+            start_date = end_date = parts[2] + '-' + parts[1] + '-' + parts[0]
+        else:
+            start_date = end_date = today
+        
+        today_obj, report_data, total_cash, total_card, total_upi, total_sale, total_expense = fetch_stores_by_date(start_date, end_date)
+        report_text = generate_report_text(start_date, end_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense)
+        
+        return report_text
     except Exception as e:
-        return str(e), 500
+        import traceback
+        return f"Error: {e}\n\n{traceback.format_exc()}"
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
