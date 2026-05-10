@@ -4,8 +4,9 @@ from google.oauth2.service_account import Credentials
 import os
 import json
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 load_dotenv()
@@ -26,9 +27,8 @@ STORES = {
     "Tyzer Shalimar": "1xKoldJMdxjBaExMPNRVpEznWkutkaUHX-B7ml2GGCXQ"
 }
 
-# Cache to avoid rate limits
 CACHE = {}
-CACHE_EXPIRY = 300  # 5 minutes
+CACHE_EXPIRY = 600  # 10 minutes
 
 def get_gspread_client():
     creds_json = os.getenv("GOOGLE_SHEETS_CREDS")
@@ -48,44 +48,12 @@ def date_in_range(date_str, start_date, end_date):
     except:
         return False
 
-def fetch_store_data(store_name, sheet_id):
-    """Fetch data from a single store sheet with retry logic"""
+def fetch_single_store(store_name, sheet_id, start_date, end_date):
+    """Fetch data from a single store - used for concurrent execution"""
     try:
         gc = get_gspread_client()
         spreadsheet = gc.open_by_key(sheet_id)
         rows = spreadsheet.sheet1.get_all_records()
-        return rows
-    except Exception as e:
-        if '429' in str(e):  # Rate limited
-            print(f"Rate limited reading {store_name}. Waiting 2 seconds...")
-            time.sleep(2)
-            try:
-                gc = get_gspread_client()
-                spreadsheet = gc.open_by_key(sheet_id)
-                rows = spreadsheet.sheet1.get_all_records()
-                return rows
-            except:
-                print(f"Failed again on {store_name}")
-                return []
-        else:
-            print(f"Error reading {store_name}: {e}")
-            return []
-
-def fetch_stores_by_date(start_date, end_date):
-    """Fetch data from all stores with caching"""
-    
-    # Check cache
-    cache_key = f"{start_date}_{end_date}"
-    if cache_key in CACHE:
-        cached_time, cached_data = CACHE[cache_key]
-        if time.time() - cached_time < CACHE_EXPIRY:
-            return cached_data
-    
-    report_data = []
-    total_cash = total_card = total_upi = total_sale = total_expense = 0
-    
-    for store_name, sheet_id in STORES.items():
-        rows = fetch_store_data(store_name, sheet_id)
         
         store_cash = store_card = store_upi = store_sale = store_expense = 0
         store_entries = 0
@@ -109,13 +77,7 @@ def fetch_stores_by_date(start_date, end_date):
                 except:
                     pass
         
-        total_cash += store_cash
-        total_card += store_card
-        total_upi += store_upi
-        total_sale += store_sale
-        total_expense += store_expense
-        
-        report_data.append({
+        return {
             "store": store_name,
             "cash": store_cash,
             "card": store_card,
@@ -123,15 +85,58 @@ def fetch_stores_by_date(start_date, end_date):
             "sale": store_sale,
             "expense": store_expense,
             "entries": store_entries
-        })
+        }
+    except Exception as e:
+        print(f"Error reading {store_name}: {str(e)[:100]}")
+        return {
+            "store": store_name,
+            "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0,
+            "entries": 0
+        }
+
+def fetch_stores_by_date(start_date, end_date):
+    """Fetch all stores concurrently - MUCH faster"""
+    
+    # Check cache
+    cache_key = f"{start_date}_{end_date}"
+    if cache_key in CACHE:
+        cached_time, cached_data = CACHE[cache_key]
+        if time.time() - cached_time < CACHE_EXPIRY:
+            print(f"✓ Using cached data for {cache_key}")
+            return cached_data
+    
+    print(f"⏳ Fetching fresh data for {cache_key}...")
+    
+    report_data = []
+    total_cash = total_card = total_upi = total_sale = total_expense = 0
+    
+    # Use ThreadPoolExecutor for concurrent reads (all 13 at once)
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            executor.submit(fetch_single_store, store_name, sheet_id, start_date, end_date): store_name
+            for store_name, sheet_id in STORES.items()
+        }
         
-        # Small delay between reads to avoid rate limiting
-        time.sleep(0.5)
+        for future in as_completed(futures):
+            try:
+                item = future.result(timeout=30)
+                report_data.append(item)
+                total_cash += item['cash']
+                total_card += item['card']
+                total_upi += item['upi']
+                total_sale += item['sale']
+                total_expense += item['expense']
+            except Exception as e:
+                print(f"Error: {e}")
+    
+    # Sort by store name for consistency
+    report_data.sort(key=lambda x: x['store'])
     
     result = (start_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense)
     
-    # Cache the result
+    # Cache it
     CACHE[cache_key] = (time.time(), result)
+    print(f"✓ Data cached for {cache_key}")
     
     return result
 
@@ -153,7 +158,7 @@ STORE-BY-STORE BREAKDOWN:
             report += f"  Cash: ₹{item['cash']:,.0f} | Card: ₹{item['card']:,.0f} | UPI: ₹{item['upi']:,.0f}\n"
             report += f"  Sale: ₹{item['sale']:,.0f} | Expense: ₹{item['expense']:,.0f}\n"
         else:
-            report += f"  No data\n"
+            report += f"  No data for this date\n"
         report += "\n"
     
     report += f"""{"="*80}
