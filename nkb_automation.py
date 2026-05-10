@@ -143,7 +143,7 @@ Date: [today]
 Keep it professional, clear, and actionable. Use emojis sparingly for emphasis."""
 
     response = client.messages.create(
-        model="claude-3-5-sonnet",
+model="claude-opus-4-6",
         max_tokens=1500,
         messages=[
             {"role": "user", "content": prompt}
