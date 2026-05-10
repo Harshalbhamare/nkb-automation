@@ -745,7 +745,7 @@ Keep it concise and actionable. Use HTML formatting with <h4> for sections and <
                 "x-api-key": api_key
             },
             json={
-                "model": "claude-opus-4-20250805",
+                "model": "claude-3-5-sonnet-20241022",
                 "max_tokens": 1024,
                 "messages": [
                     {"role": "user", "content": prompt}
@@ -755,7 +755,9 @@ Keep it concise and actionable. Use HTML formatting with <h4> for sections and <
         )
         
         if response.status_code != 200:
-            return jsonify({"error": f"Claude API error: {response.status_code}"}), 500
+            error_detail = response.text
+            print(f"Claude API Error: {response.status_code} - {error_detail}")
+            return jsonify({"error": f"Claude API error: {response.status_code}. Check server logs."}), 500
         
         result = response.json()
         analysis_text = result['content'][0]['text']
@@ -764,7 +766,8 @@ Keep it concise and actionable. Use HTML formatting with <h4> for sections and <
         return jsonify({"analysis": analysis_html})
     
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Analyze error: {str(e)}")
+        return jsonify({"error": f"Error: {str(e)}"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
