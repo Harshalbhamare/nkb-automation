@@ -180,11 +180,11 @@ def fetch_stores_by_date(start_date, end_date):
         batch_size = 4
         
         with ThreadPoolExecutor(max_workers=batch_size) as executor:
-            futures = {}
-            
             for batch_num, i in enumerate(range(0, total_stores, batch_size)):
                 batch = store_list[i:i+batch_size]
                 print(f"  [Batch {batch_num+1}] Starting {len(batch)} concurrent fetches...")
+                
+                futures = {}
                 
                 for store_name, sheet_id in batch:
                     store_idx = store_list.index((store_name, sheet_id)) + 1
