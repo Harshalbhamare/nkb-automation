@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+from flask import Flask, request
+from nkb_automation import fetch_stores_by_date
+import os
+from datetime import datetime, timedelta
+import pytz
+
+app = Flask(__name__)
+
 @app.route('/', methods=['GET'])
 def home():
     return """
@@ -373,3 +382,127 @@ def home():
     </body>
     </html>
     """
+
+@app.route('/report', methods=['GET'])
+def view_report():
+    try:
+        range_type = request.args.get('range', 'yesterday')
+        custom_date = request.args.get('date', None)
+        
+        ist = pytz.timezone('Asia/Kolkata')
+        today = datetime.now(ist).strftime('%d-%m-%Y')
+        
+        if range_type == 'yesterday':
+            yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
+            start_date = end_date = yesterday
+        elif range_type == 'mtd':
+            today_obj = datetime.now(ist)
+            start_date = f"01-{today_obj.strftime('%m-%Y')}"
+            end_date = today
+        elif range_type == 'custom':
+            if not custom_date:
+                return '<div class="error">Error: No date provided</div>'
+            try:
+                custom_date_obj = datetime.strptime(custom_date, '%Y-%m-%d')
+                start_date = end_date = custom_date_obj.strftime('%d-%m-%Y')
+            except:
+                return '<div class="error">Invalid date format</div>'
+        else:
+            yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
+            start_date = end_date = yesterday
+        
+        _, report_data, total_cash, total_card, total_upi, total_sale, total_expense = fetch_stores_by_date(start_date, end_date)
+        
+        display_date = start_date if start_date == end_date else f"{start_date} to {end_date}"
+        
+        html = f'''
+        <div class="report-header">
+            <div class="report-title">Close Cash Report</div>
+            <div class="report-date">{display_date}</div>
+        </div>
+        
+        <div class="store-grid">
+        '''
+        
+        for item in report_data:
+            remark = item.get('remark', '-') or '-'
+            if item['entries'] > 0:
+                html += f'''
+                <div class="store-card">
+                    <div class="store-header">
+                        <p class="store-name">{item['store']}</p>
+                    </div>
+                    <div class="store-body">
+                        <div class="data-row">
+                            <span class="data-label">Cash</span>
+                            <span class="data-value">₹{item['cash']:,.0f}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Card</span>
+                            <span class="data-value">₹{item['card']:,.0f}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">UPI</span>
+                            <span class="data-value">₹{item['upi']:,.0f}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Sale</span>
+                            <span class="data-value highlight">₹{item['sale']:,.0f}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Expense</span>
+                            <span class="data-value">₹{item['expense']:,.0f}</span>
+                        </div>
+                        <div class="remark-section">
+                            <div class="remark-label">Remark</div>
+                            <div class="remark-text">{remark}</div>
+                        </div>
+                    </div>
+                </div>
+                '''
+            else:
+                html += f'''
+                <div class="store-card no-data">
+                    <div class="store-header">
+                        <p class="store-name">{item['store']}</p>
+                    </div>
+                    <div class="no-data-text">No data</div>
+                </div>
+                '''
+        
+        html += '</div>'
+        
+        net_collection = total_cash + total_card + total_upi
+        html += f'''
+        <div class="summary">
+            <div class="summary-item">
+                <div class="summary-label">Total Cash</div>
+                <div class="summary-value">₹{total_cash:,.0f}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Total Card</div>
+                <div class="summary-value">₹{total_card:,.0f}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Total UPI</div>
+                <div class="summary-value">₹{total_upi:,.0f}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Net</div>
+                <div class="summary-value">₹{net_collection:,.0f}</div>
+            </div>
+        </div>
+        
+        <div class="timestamp">
+            Generated: {datetime.now(ist).strftime('%d-%m-%Y %H:%M IST')}
+        </div>
+        '''
+        
+        return html
+    
+    except Exception as e:
+        return f'<div class="error">Error: {str(e)}</div>'
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
