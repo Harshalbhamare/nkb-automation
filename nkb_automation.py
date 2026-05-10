@@ -103,7 +103,7 @@ def fetch_stores_by_date(start_date, end_date):
                     "entries": 0
                 })
                 if idx < len(STORES):
-                    time.sleep(0.5)
+                    time.sleep(1.5)
                 continue
             
             store_cash = store_card = store_upi = store_sale = store_expense = 0
@@ -153,7 +153,7 @@ def fetch_stores_by_date(start_date, end_date):
             })
             
             if idx < len(STORES):
-                time.sleep(0.5)
+                time.sleep(1.5)
         
         except Exception as e:
             print(f" ❌ Error: {str(e)}")
