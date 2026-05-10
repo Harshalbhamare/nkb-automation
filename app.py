@@ -1,28 +1,12 @@
 #!/usr/bin/env python3
 from flask import Flask, jsonify
 from nkb_automation import generate_report
-import threading
-import schedule
-import time
 import os
 from datetime import datetime
 import pytz
 
 app = Flask(__name__)
 last_run_time = None
-
-def scheduled_task():
-    global last_run_time
-    print(f"\n⏰ Scheduled task running at {datetime.now(pytz.timezone('Asia/Kolkata'))}")
-    generate_report()
-    last_run_time = datetime.now(pytz.timezone('Asia/Kolkata'))
-
-def run_scheduler():
-    schedule.every().day.at("00:00").do(scheduled_task)
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(60)
 
 @app.route('/', methods=['GET'])
 def home():
@@ -181,7 +165,7 @@ def home():
                     <li>Analyzes performance with Claude AI</li>
                     <li>Identifies underperformance & expense spikes</li>
                     <li>Generates professional report</li>
-                    <li>Sends via email with Excel attachment</li>
+                    <li>Sends via email</li>
                 </ul>
             </div>
             
@@ -209,11 +193,12 @@ def home():
                     
                     if (data.success) {
                         msg.innerHTML = '<div class="success">✅ Report generated successfully and email sent!</div>';
+                        document.getElementById('lastRun').textContent = new Date().toLocaleString();
                     } else {
                         msg.innerHTML = '<div class="error">❌ Error: ' + (data.error || 'Failed to generate report') + '</div>';
                     }
                 } catch (error) {
-                    msg.innerHTML = '<div class="error">❌ Error: Failed to generate report</div>';
+                    msg.innerHTML = '<div class="error">❌ Error: ' + error.message + '</div>';
                 }
                 
                 btn.disabled = false;
@@ -236,9 +221,10 @@ def api_generate_report():
         result = generate_report()
         return jsonify({
             "success": result,
-            "message": "Report generated" if result else "Report generation failed"
+            "message": "Report generated and emailed" if result else "Report generation failed"
         })
     except Exception as e:
+        print(f"Error in API: {e}")
         return jsonify({
             "success": False,
             "error": str(e)
@@ -246,16 +232,8 @@ def api_generate_report():
 
 @app.route('/api/last-run', methods=['GET'])
 def api_last_run():
-    global last_run_time
-    if last_run_time:
-        return jsonify({"last_run": last_run_time.strftime("%d-%m-%Y %H:%M IST")})
-    return jsonify({"last_run": "Never"})
+    return jsonify({"last_run": "See email inbox"})
 
 if __name__ == '__main__':
-    # Start scheduler in background thread
-    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-    scheduler_thread.start()
-    
-    # Start Flask app
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
