@@ -1,1 +1,1 @@
-if time.time() - cached_time < 3600:
+web: gunicorn --timeout 600 --workers 1 --max-requests 10 app:app
