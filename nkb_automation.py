@@ -110,7 +110,12 @@ def fetch_stores_by_date(start_date, end_date):
                     print(f" (no data)")
                     report_data.append({
                         "store": store_name,
-                        "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0,
+                        "cash": 0,
+                        "card": 0,
+                        "upi": 0,
+                        "sale": 0,
+                        "expense": 0,
+                        "remark": "-",
                         "entries": 0
                     })
                     if idx < len(STORES):
@@ -119,6 +124,7 @@ def fetch_stores_by_date(start_date, end_date):
                 
                 store_cash = store_card = store_upi = store_sale = store_expense = 0
                 store_entries = 0
+                store_remark = "-"
                 
                 for row in all_values[1:]:
                     if len(row) < 9:
@@ -132,6 +138,7 @@ def fetch_stores_by_date(start_date, end_date):
                         upi = safe_float(row[4])
                         sale = safe_float(row[5])
                         expense = safe_float(row[7])
+                        remark = str(row[9]).strip() if len(row) > 9 else "-"
                         
                         store_cash += cash
                         store_card += card
@@ -139,6 +146,9 @@ def fetch_stores_by_date(start_date, end_date):
                         store_sale += sale
                         store_expense += expense
                         store_entries += 1
+                        
+                        if remark and remark != "-":
+                            store_remark = remark
                 
                 total_cash += store_cash
                 total_card += store_card
@@ -158,6 +168,7 @@ def fetch_stores_by_date(start_date, end_date):
                     "upi": store_upi,
                     "sale": store_sale,
                     "expense": store_expense,
+                    "remark": store_remark,
                     "entries": store_entries
                 })
                 
@@ -168,7 +179,12 @@ def fetch_stores_by_date(start_date, end_date):
                 print(f" ❌ Error")
                 report_data.append({
                     "store": store_name,
-                    "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0,
+                    "cash": 0,
+                    "card": 0,
+                    "upi": 0,
+                    "sale": 0,
+                    "expense": 0,
+                    "remark": "-",
                     "entries": 0
                 })
         
