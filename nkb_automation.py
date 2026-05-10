@@ -37,37 +37,43 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
-def date_in_range(date_str, start_date, end_date):
-    """Check if date_str (DD/MM/YYYY from sheet) falls between start_date and end_date (DD-MM-YYYY format)"""
+def safe_float(value):
+    """Safely convert value to float"""
+    try:
+        if value is None or value == "":
+            return 0.0
+        val_str = str(value).strip()
+        if not val_str:
+            return 0.0
+        return float(val_str)
+    except:
+        return 0.0
+
+def parse_date(date_str):
+    """Parse date in DD/MM/YYYY format"""
     try:
         date_str = str(date_str).strip()
         if not date_str or len(date_str) < 8:
-            return False
-        
-        # Try DD/MM/YYYY format (sheet format)
-        try:
-            date_obj = datetime.strptime(date_str, '%d/%m/%Y')
-        except:
-            # Try DD-MM-YYYY format as fallback
-            date_obj = datetime.strptime(date_str, '%d-%m-%Y')
-        
-        start_obj = datetime.strptime(start_date, '%d-%m-%Y')
-        end_obj = datetime.strptime(end_date, '%d-%m-%Y')
-        
-        return start_obj <= date_obj <= end_obj
-    except Exception as e:
+            return None
+        return datetime.strptime(date_str, '%d/%m/%Y').date()
+    except:
+        return None
+
+def date_in_range(date_str, start_date, end_date):
+    """Check if date falls in range (DD/MM/YYYY vs DD-MM-YYYY format)"""
+    parsed_date = parse_date(date_str)
+    if parsed_date is None:
+        return False
+    
+    try:
+        start_obj = datetime.strptime(start_date, '%d-%m-%Y').date()
+        end_obj = datetime.strptime(end_date, '%d-%m-%Y').date()
+        return start_obj <= parsed_date <= end_obj
+    except:
         return False
 
-def safe_float(value):
-    """Safely convert value to float, return 0 if fails"""
-    try:
-        if value is None or value == "":
-            return 0
-        return float(str(value).strip())
-    except:
-        return 0
-
 def fetch_stores_by_date(start_date, end_date):
+    """Fetch data from all stores for given date range using positional column indexing"""
     cache_key = f"{start_date}_{end_date}"
     
     if cache_key in CACHE:
@@ -87,20 +93,36 @@ def fetch_stores_by_date(start_date, end_date):
             print(f"  [{idx}/13] {store_name}...", end="", flush=True)
             
             spreadsheet = gc.open_by_key(sheet_id)
-            rows = spreadsheet.sheet1.get_all_records()
+            all_values = spreadsheet.sheet1.get_all_values()
+            
+            if not all_values or len(all_values) < 2:
+                print(f" (no data)")
+                report_data.append({
+                    "store": store_name,
+                    "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0,
+                    "entries": 0
+                })
+                if idx < len(STORES):
+                    time.sleep(2)
+                continue
             
             store_cash = store_card = store_upi = store_sale = store_expense = 0
             store_entries = 0
             
-            for row in rows:
-                date_val = row.get("DATE", "")
+            # Skip header row (row 0), process all data rows
+            for row in all_values[1:]:
+                if len(row) < 9:
+                    continue
+                
+                date_val = row[0]
                 
                 if date_in_range(date_val, start_date, end_date):
-                    cash = safe_float(row.get("CASH", 0))
-                    card = safe_float(row.get("Swip m/c", row.get("Card", 0)))
-                    upi = safe_float(row.get("UPI", 0))
-                    sale = safe_float(row.get("SALE", 0))
-                    expense = safe_float(row.get("EXP.", row.get("Expense", 0)))
+                    # Column positions: A=0(date), B=1(op.bal), C=2(cash), D=3(card), E=4(upi), F=5(sale), G=6(bank), H=7(expense)
+                    cash = safe_float(row[2])
+                    card = safe_float(row[3])
+                    upi = safe_float(row[4])
+                    sale = safe_float(row[5])
+                    expense = safe_float(row[7])
                     
                     store_cash += cash
                     store_card += card
@@ -145,42 +167,3 @@ def fetch_stores_by_date(start_date, end_date):
     CACHE[cache_key] = (time.time(), result)
     
     return result
-
-def generate_report_text(start_date, end_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense):
-    date_range = start_date if start_date == end_date else f"{start_date} to {end_date}"
-    
-    report = f"""📊 NKB DAILY CLOSE CASH REPORT
-Date Range: {date_range}
-
-{"="*80}
-
-STORE-BY-STORE BREAKDOWN:
-
-"""
-    
-    for item in report_data:
-        report += f"{item['store']}\n"
-        if item['entries'] > 0:
-            report += f"  Cash: ₹{item['cash']:,.0f} | Card: ₹{item['card']:,.0f} | UPI: ₹{item['upi']:,.0f}\n"
-            report += f"  Sale: ₹{item['sale']:,.0f} | Expense: ₹{item['expense']:,.0f}\n"
-        else:
-            report += f"  No data for this date\n"
-        report += "\n"
-    
-    report += f"""{"="*80}
-
-TOTALS:
-  Total Cash: ₹{total_cash:,.0f}
-  Total Card: ₹{total_card:,.0f}
-  Total UPI: ₹{total_upi:,.0f}
-  Total Sale: ₹{total_sale:,.0f}
-  Total Expense: ₹{total_expense:,.0f}
-
-Net Collection: ₹{(total_cash + total_card + total_upi):,.0f}
-
-{"="*80}
-
-Report generated at: {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d-%m-%Y %H:%M:%S IST')}
-"""
-    
-    return report
