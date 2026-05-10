@@ -4,12 +4,12 @@ from google.oauth2.service_account import Credentials
 import os
 import json
 from dotenv import load_dotenv
-from anthropic import Anthropic
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import pytz
+import requests
 
 load_dotenv()
 
@@ -76,7 +76,6 @@ def fetch_all_stores_data(gc):
 
 def generate_report_with_claude(stores_data):
     api_key = os.getenv("CLAUDE_API_KEY")
-    client = Anthropic(api_key=api_key)
     
     data_text = f"CLOSE CASH REPORT - {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d-%m-%Y')}\n\n"
     for store in stores_data:
@@ -84,13 +83,25 @@ def generate_report_with_claude(stores_data):
     
     prompt = f"Analyze this close cash data and create a brief professional report:\n\n{data_text}"
     
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=800,
-        messages=[{"role": "user", "content": prompt}]
+    response = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        },
+        json={
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 800,
+            "messages": [{"role": "user", "content": prompt}]
+        }
     )
     
-    return response.content[0].text
+    if response.status_code == 200:
+        return response.json()["content"][0]["text"]
+    else:
+        print(f"Claude API Error: {response.status_code} - {response.text}")
+        return "Report generation failed"
 
 def send_email(report_text):
     sender = "nkblifestylebrands@gmail.com"
