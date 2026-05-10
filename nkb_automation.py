@@ -41,7 +41,7 @@ def get_gspread_client():
 
 def date_in_range(date_str, start_date, end_date):
     try:
-        date_obj = datetime.strptime(date_str.strip(), '%d-%m-%Y')
+        date_obj = datetime.strptime(date_str.strip(), '%d/%m/%Y')
         start_obj = datetime.strptime(start_date, '%d-%m-%Y')
         end_obj = datetime.strptime(end_date, '%d-%m-%Y')
         return start_obj <= date_obj <= end_obj
