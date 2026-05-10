@@ -103,11 +103,9 @@ def fetch_all_stores_data(gc):
     return all_data
 
 def generate_report_with_claude(stores_data):
-    api_key = os.getenv("CLAUDE_API_KEY")
-    if not api_key:
-        raise ValueError("CLAUDE_API_KEY not set")
     
-    client = Anthropic(api_key=api_key)
+    
+client = Anthropic()
     
     data_text = "CLOSE CASH REPORT - " + datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d-%m-%Y") + "\n\n"
     
