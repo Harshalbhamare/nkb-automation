@@ -103,9 +103,7 @@ def fetch_all_stores_data(gc):
     return all_data
 
 def generate_report_with_claude(stores_data):
-    
-    
-client = Anthropic()
+    client = Anthropic()
     
     data_text = "CLOSE CASH REPORT - " + datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d-%m-%Y") + "\n\n"
     
@@ -156,7 +154,7 @@ def send_email(report_text):
     
     recipients = [
         "nkblifestylebrands@gmail.com",
-        "HB9APPLE@GMAIL.COM",
+        "harshal@nkb.in",
         "kapil@nkb.in",
         "kamlakar@nkb.in"
     ]
