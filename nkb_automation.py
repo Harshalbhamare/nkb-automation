@@ -38,13 +38,34 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def date_in_range(date_str, start_date, end_date):
+    """Check if date_str (DD/MM/YYYY from sheet) falls between start_date and end_date (DD-MM-YYYY format)"""
     try:
-        date_obj = datetime.strptime(date_str.strip(), '%d/%m/%Y')
+        date_str = str(date_str).strip()
+        if not date_str or len(date_str) < 8:
+            return False
+        
+        # Try DD/MM/YYYY format (sheet format)
+        try:
+            date_obj = datetime.strptime(date_str, '%d/%m/%Y')
+        except:
+            # Try DD-MM-YYYY format as fallback
+            date_obj = datetime.strptime(date_str, '%d-%m-%Y')
+        
         start_obj = datetime.strptime(start_date, '%d-%m-%Y')
         end_obj = datetime.strptime(end_date, '%d-%m-%Y')
+        
         return start_obj <= date_obj <= end_obj
-    except:
+    except Exception as e:
         return False
+
+def safe_float(value):
+    """Safely convert value to float, return 0 if fails"""
+    try:
+        if value is None or value == "":
+            return 0
+        return float(str(value).strip())
+    except:
+        return 0
 
 def fetch_stores_by_date(start_date, end_date):
     cache_key = f"{start_date}_{end_date}"
@@ -52,10 +73,9 @@ def fetch_stores_by_date(start_date, end_date):
     if cache_key in CACHE:
         cached_time, cached_data = CACHE[cache_key]
         if time.time() - cached_time < 300:
-            print(f"✓ Using cache for {cache_key}")
             return cached_data
     
-    print(f"\n🔄 Fetching data for {cache_key}...")
+    print(f"\n🔄 Fetching data for {start_date} to {end_date}...")
     
     report_data = []
     total_cash = total_card = total_upi = total_sale = total_expense = 0
@@ -73,24 +93,21 @@ def fetch_stores_by_date(start_date, end_date):
             store_entries = 0
             
             for row in rows:
-                date_val = row.get("DATE", "").strip()
+                date_val = row.get("DATE", "")
                 
                 if date_in_range(date_val, start_date, end_date):
-                    try:
-                        cash = float(row.get("CASH", 0) or 0)
-                        card = float(row.get("Swip m/c", row.get("Card", 0)) or 0)
-                        upi = float(row.get("UPI", 0) or 0)
-                        sale = float(row.get("SALE", 0) or 0)
-                        expense = float(row.get("EXP.", row.get("Expense", 0)) or 0)
-                        
-                        store_cash += cash
-                        store_card += card
-                        store_upi += upi
-                        store_sale += sale
-                        store_expense += expense
-                        store_entries += 1
-                    except:
-                        pass
+                    cash = safe_float(row.get("CASH", 0))
+                    card = safe_float(row.get("Swip m/c", row.get("Card", 0)))
+                    upi = safe_float(row.get("UPI", 0))
+                    sale = safe_float(row.get("SALE", 0))
+                    expense = safe_float(row.get("EXP.", row.get("Expense", 0)))
+                    
+                    store_cash += cash
+                    store_card += card
+                    store_upi += upi
+                    store_sale += sale
+                    store_expense += expense
+                    store_entries += 1
             
             total_cash += store_cash
             total_card += store_card
@@ -99,7 +116,7 @@ def fetch_stores_by_date(start_date, end_date):
             total_expense += store_expense
             
             if store_entries > 0:
-                print(f" ✓ {store_entries} entries: ₹{store_sale:,}")
+                print(f" ✓ {store_entries} entries: ₹{store_sale:,.0f}")
             else:
                 print(f" (no data)")
             
@@ -117,7 +134,7 @@ def fetch_stores_by_date(start_date, end_date):
                 time.sleep(2)
         
         except Exception as e:
-            print(f" ❌ Error")
+            print(f" ❌ Error: {str(e)}")
             report_data.append({
                 "store": store_name,
                 "cash": 0, "card": 0, "upi": 0, "sale": 0, "expense": 0,
