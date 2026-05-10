@@ -1,12 +1,3 @@
-#!/usr/bin/env python3
-from flask import Flask, request
-from nkb_automation import fetch_stores_by_date
-import os
-from datetime import datetime, timedelta
-import pytz
-
-app = Flask(__name__)
-
 @app.route('/', methods=['GET'])
 def home():
     return """
@@ -115,6 +106,25 @@ def home():
                 flex: 1;
                 padding: 20px 16px;
                 overflow: auto;
+            }
+            .empty-state {
+                text-align: center;
+                padding: 60px 20px;
+                color: #999;
+            }
+            .empty-state-icon {
+                font-size: 48px;
+                margin-bottom: 16px;
+            }
+            .empty-state-title {
+                font-size: 18px;
+                font-weight: 600;
+                color: #666;
+                margin-bottom: 8px;
+            }
+            .empty-state-text {
+                font-size: 13px;
+                color: #999;
             }
             .report-header {
                 text-align: center;
@@ -309,19 +319,19 @@ def home():
             </div>
 
             <div class="controls">
-                <div class="controls-title">Date Range</div>
+                <div class="controls-title">Select Date Range</div>
                 <div class="button-group">
-                    <button onclick="generateReport('today')" class="active" id="btn-today">Today</button>
-                    <button onclick="generateReport('yesterday')" id="btn-yesterday">Yesterday</button>
-                    <button onclick="generateReport('mtd')" id="btn-mtd">MTD</button>
+                    <button onclick="generateReport('yesterday')" id="btn-yesterday">📅 Yesterday</button>
+                    <button onclick="generateReport('mtd')" id="btn-mtd">📊 Month to Date</button>
                     <input type="date" id="customDate" onchange="generateReport('custom')" />
                 </div>
             </div>
 
             <div class="report-container" id="report">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Loading...</p>
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <div class="empty-state-title">Select a date range</div>
+                    <div class="empty-state-text">Click a button above to view close cash report</div>
                 </div>
             </div>
         </div>
@@ -331,7 +341,6 @@ def home():
                 document.querySelectorAll('button').forEach(btn => {
                     btn.classList.remove('active');
                 });
-                if (active === 'today') document.getElementById('btn-today').classList.add('active');
                 if (active === 'yesterday') document.getElementById('btn-yesterday').classList.add('active');
                 if (active === 'mtd') document.getElementById('btn-mtd').classList.add('active');
             }
@@ -344,7 +353,7 @@ def home():
                 if (range === 'custom') {
                     const date = document.getElementById('customDate').value;
                     if (!date) {
-                        report.innerHTML = '<div class="error">Please select a date</div>';
+                        report.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-title">Please select a date</div></div>';
                         return;
                     }
                     url = '/report?range=custom&date=' + date;
@@ -360,134 +369,7 @@ def home():
                     report.innerHTML = '<div class="error">Error: ' + e.message + '</div>';
                 }
             }
-            
-            generateReport('today');
         </script>
     </body>
     </html>
     """
-
-@app.route('/report', methods=['GET'])
-def view_report():
-    try:
-        range_type = request.args.get('range', 'today')
-        custom_date = request.args.get('date', None)
-        
-        ist = pytz.timezone('Asia/Kolkata')
-        today = datetime.now(ist).strftime('%d-%m-%Y')
-        
-        if range_type == 'today':
-            start_date = end_date = today
-        elif range_type == 'yesterday':
-            yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
-            start_date = end_date = yesterday
-        elif range_type == 'mtd':
-            today_obj = datetime.now(ist)
-            start_date = f"01-{today_obj.strftime('%m-%Y')}"
-            end_date = today
-        elif range_type == 'custom':
-            if not custom_date:
-                return '<div class="error">Error: No date provided</div>'
-            try:
-                custom_date_obj = datetime.strptime(custom_date, '%Y-%m-%d')
-                start_date = end_date = custom_date_obj.strftime('%d-%m-%Y')
-            except:
-                return '<div class="error">Invalid date format</div>'
-        else:
-            start_date = end_date = today
-        
-        _, report_data, total_cash, total_card, total_upi, total_sale, total_expense = fetch_stores_by_date(start_date, end_date)
-        
-        display_date = start_date if start_date == end_date else f"{start_date} to {end_date}"
-        
-        html = f'''
-        <div class="report-header">
-            <div class="report-title">Close Cash Report</div>
-            <div class="report-date">{display_date}</div>
-        </div>
-        
-        <div class="store-grid">
-        '''
-        
-        for item in report_data:
-            remark = item.get('remark', '-') or '-'
-            if item['entries'] > 0:
-                html += f'''
-                <div class="store-card">
-                    <div class="store-header">
-                        <p class="store-name">{item['store']}</p>
-                    </div>
-                    <div class="store-body">
-                        <div class="data-row">
-                            <span class="data-label">Cash</span>
-                            <span class="data-value">₹{item['cash']:,.0f}</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">Card</span>
-                            <span class="data-value">₹{item['card']:,.0f}</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">UPI</span>
-                            <span class="data-value">₹{item['upi']:,.0f}</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">Sale</span>
-                            <span class="data-value highlight">₹{item['sale']:,.0f}</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">Expense</span>
-                            <span class="data-value">₹{item['expense']:,.0f}</span>
-                        </div>
-                        <div class="remark-section">
-                            <div class="remark-label">Remark</div>
-                            <div class="remark-text">{remark}</div>
-                        </div>
-                    </div>
-                </div>
-                '''
-            else:
-                html += f'''
-                <div class="store-card no-data">
-                    <div class="store-header">
-                        <p class="store-name">{item['store']}</p>
-                    </div>
-                    <div class="no-data-text">No data</div>
-                </div>
-                '''
-        
-        html += '</div>'
-        
-        net_collection = total_cash + total_card + total_upi
-        html += f'''
-        <div class="summary">
-            <div class="summary-item">
-                <div class="summary-label">Total Cash</div>
-                <div class="summary-value">₹{total_cash:,.0f}</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">Total Card</div>
-                <div class="summary-value">₹{total_card:,.0f}</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">Total UPI</div>
-                <div class="summary-value">₹{total_upi:,.0f}</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">Net</div>
-                <div class="summary-value">₹{net_collection:,.0f}</div>
-            </div>
-        </div>
-        
-        <div class="timestamp">
-            Generated: {datetime.now(ist).strftime('%d-%m-%Y %H:%M IST')}
-        </div>
-        '''
-        
-        return html
-    
-    except Exception as e:
-        return f'<div class="error">Error: {str(e)}</div>'
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
