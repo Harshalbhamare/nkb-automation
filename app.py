@@ -746,7 +746,7 @@ Keep it concise and actionable. Use HTML formatting with <h4> for sections and <
                 "anthropic-version": "2023-06-01"
             },
             json={
-                "model": "claude-3-5-sonnet-20241022",
+                "model": "claude-3-sonnet-20240229",
                 "max_tokens": 1024,
                 "messages": [
                     {"role": "user", "content": prompt}
