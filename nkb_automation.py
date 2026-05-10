@@ -73,23 +73,29 @@ def date_in_range(date_str, start_date, end_date):
         return False
 
 def fetch_stores_by_date(start_date, end_date):
-    """Fetch with request deduplication via lock"""
+    """Fetch with request deduplication via lock. Only cache on complete success."""
     cache_key = f"{start_date}_{end_date}"
     
     with FETCH_LOCK:
+        # Check if valid cache exists
         if cache_key in CACHE:
             cached_time, cached_data = CACHE[cache_key]
-            if time.time() - cached_time < 3600:
+            if time.time() - cached_time < 3600:  # 1 hour cache
+                print(f"✅ Using cached data for {start_date} to {end_date}")
                 return cached_data
         
+        # Check if fetch already in progress
         if cache_key in IN_PROGRESS:
             event = IN_PROGRESS[cache_key]
         else:
             event = threading.Event()
             IN_PROGRESS[cache_key] = event
     
+    # Wait if another request is fetching this date
     if event.is_set():
-        return CACHE[cache_key][1]
+        with FETCH_LOCK:
+            if cache_key in CACHE:
+                return CACHE[cache_key][1]
     
     try:
         print(f"\n🔄 Fetching data for {start_date} to {end_date}...")
@@ -176,7 +182,7 @@ def fetch_stores_by_date(start_date, end_date):
                     time.sleep(1.5)
             
             except Exception as e:
-                print(f" ❌ Error")
+                print(f" ❌ Error: {str(e)}")
                 report_data.append({
                     "store": store_name,
                     "cash": 0,
@@ -190,8 +196,20 @@ def fetch_stores_by_date(start_date, end_date):
         
         result = (start_date, report_data, total_cash, total_card, total_upi, total_sale, total_expense)
         
+        # Count successful stores
+        successful_stores = sum(1 for item in report_data if item['entries'] > 0)
+        
         with FETCH_LOCK:
-            CACHE[cache_key] = (time.time(), result)
+            # ONLY cache if all 13 stores have data
+            if successful_stores >= 13:
+                CACHE[cache_key] = (time.time(), result)
+                print(f"✅ Cached {start_date} to {end_date} ({successful_stores}/13 stores)")
+            else:
+                # Clear any partial cache
+                if cache_key in CACHE:
+                    del CACHE[cache_key]
+                print(f"⚠️ Partial data ({successful_stores}/13 stores) - NOT cached")
+            
             event.set()
             if cache_key in IN_PROGRESS:
                 del IN_PROGRESS[cache_key]
@@ -199,6 +217,7 @@ def fetch_stores_by_date(start_date, end_date):
         return result
     
     except Exception as e:
+        print(f"❌ Fetch error: {str(e)}")
         with FETCH_LOCK:
             event.set()
             if cache_key in IN_PROGRESS:
