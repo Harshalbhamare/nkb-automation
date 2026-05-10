@@ -6,8 +6,6 @@ import os
 from datetime import datetime, timedelta
 import pytz
 import atexit
-import json
-import requests
 
 app = Flask(__name__)
 
@@ -502,31 +500,52 @@ def home():
                 }
             }
             
-            async function getAIAnalysis() {
-                if (!currentReportData) return;
-                
-                const analysisDiv = document.getElementById('ai-content');
-                analysisDiv.style.display = 'block';
-                analysisDiv.innerHTML = '<div class="ai-loading"><div class="ai-spinner"></div><p>Claude is analyzing your data...</p></div>';
-                
-                try {
-                    const response = await fetch('/analyze', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(currentReportData)
-                    });
-                    
-                    const result = await response.json();
-                    if (result.error) {
-                        analysisDiv.innerHTML = '<div class="ai-error">Error: ' + result.error + '</div>';
-                    } else {
-                        analysisDiv.innerHTML = '<div class="ai-content">' + result.analysis + '</div>';
-                    }
-                } catch (e) {
-                    analysisDiv.innerHTML = '<div class="ai-error">Error: ' + e.message + '</div>';
+            function shareWithClaude() {
+                if (!currentReportData) {
+                    alert('Please load a report first');
+                    return;
                 }
+                
+                const totals = currentReportData['data']['totals'];
+                const stores = currentReportData['data']['stores'];
+                const date = currentReportData['data']['date'];
+                
+                let storesText = stores.map(s => {
+                    if (s['entries'] > 0) {
+                        return `${s['store']}: Sale ₹${s['sale'].toLocaleString('en-IN')}, Expense ₹${s['expense'].toLocaleString('en-IN')}, Cash ₹${s['cash'].toLocaleString('en-IN')}, Card ₹${s['card'].toLocaleString('en-IN')}, UPI ₹${s['upi'].toLocaleString('en-IN')}`;
+                    }
+                    return null;
+                }).filter(s => s !== null).join('\n');
+                
+                const prompt = `Analyze this NKB Store Close Cash report for ${date}:
+
+SUMMARY:
+- Total Sale: ₹${totals['sale'].toLocaleString('en-IN')}
+- Total Expense: ₹${totals['expense'].toLocaleString('en-IN')} (${((totals['expense'] / totals['sale']) * 100).toFixed(1)}% of sales)
+- Net Collection: ₹${totals['net_collection'].toLocaleString('en-IN')}
+  - Cash: ₹${totals['cash'].toLocaleString('en-IN')}
+  - Card: ₹${totals['card'].toLocaleString('en-IN')}
+  - UPI: ₹${totals['upi'].toLocaleString('en-IN')}
+
+STORE-WISE BREAKDOWN:
+${storesText}
+
+Please provide:
+1. Key findings (2-3 points about performance)
+2. Stores that need attention (if any underperforming)
+3. Expense observations
+4. Recommendations (2-3 actionable items)`;
+                
+                // Copy to clipboard
+                navigator.clipboard.writeText(prompt).then(() => {
+                    // Open Claude in new tab
+                    window.open('https://claude.ai', '_blank');
+                    alert('Report data copied to clipboard!\nPaste it into Claude to get AI insights.');
+                }).catch(() => {
+                    // Fallback: just open Claude
+                    window.open('https://claude.ai', '_blank');
+                    alert('Open Claude and paste this data:\n\n' + prompt);
+                });
             }
         </script>
     </body>
@@ -667,10 +686,9 @@ def view_report():
         <div class="ai-section">
             <div class="ai-header">
                 <h3>✨ Claude AI Analysis</h3>
-                <button class="ai-button" onclick="getAIAnalysis()">Analyze Data</button>
+                <button class="ai-button" onclick="shareWithClaude()">Share with Claude</button>
             </div>
-            <div id="ai-content" style="display:none;"></div>
-            <p style="font-size: 11px; color: #666; margin-top: 8px;">Click above to get AI insights on sales performance, expense trends, and recommendations.</p>
+            <p style="font-size: 11px; color: #666; margin-top: 8px;">Click above to send this report to Claude for AI-powered insights on sales performance, expense trends, and recommendations.</p>
         </div>
         
         <div class="timestamp">
@@ -696,79 +714,6 @@ def view_report():
     
     except Exception as e:
         return jsonify({"error": str(e)})
-
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    try:
-        report_data = request.json
-        
-        stores_summary = []
-        for store in report_data['data']['stores']:
-            if store['entries'] > 0:
-                stores_summary.append(
-                    f"- {store['store']}: Sale ₹{store['sale']:,.0f}, Expense ₹{store['expense']:,.0f}, "
-                    f"Cash ₹{store['cash']:,.0f}, Card ₹{store['card']:,.0f}, UPI ₹{store['upi']:,.0f}"
-                )
-        
-        totals = report_data['data']['totals']
-        expense_percentage = (totals['expense'] / totals['sale'] * 100) if totals['sale'] > 0 else 0
-        
-        prompt = f"""Analyze this NKB Store Close Cash report for {report_data['data']['date']} and provide insights:
-
-SUMMARY:
-- Total Sale: ₹{totals['sale']:,.0f}
-- Total Expense: ₹{totals['expense']:,.0f} ({expense_percentage:.1f}% of sales)
-- Net Collection: ₹{totals['net_collection']:,.0f}
-  - Cash: ₹{totals['cash']:,.0f}
-  - Card: ₹{totals['card']:,.0f}
-  - UPI: ₹{totals['upi']:,.0f}
-
-STORE-WISE BREAKDOWN:
-{chr(10).join(stores_summary)}
-
-Please provide:
-1. Key findings (2-3 points about performance)
-2. Stores that need attention (if any underperforming)
-3. Expense observations
-4. Recommendations (2-3 actionable items)
-
-Keep it concise and actionable. Use HTML formatting with <h4> for sections and <ul><li> for lists."""
-
-        api_key = os.getenv("CLAUDE_API_KEY")
-        if not api_key:
-            return jsonify({"error": "Claude API key not configured"}), 500
-        
-        response = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01"
-            },
-            json={
-                "model": "claude-opus-4-20250805",
-                "max_tokens": 1024,
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ]
-            },
-            timeout=30
-        )
-        
-        if response.status_code != 200:
-            error_detail = response.text
-            print(f"Claude API Error: {response.status_code} - {error_detail}")
-            return jsonify({"error": f"Claude API error: {response.status_code}. Check server logs."}), 500
-        
-        result = response.json()
-        analysis_text = result['content'][0]['text']
-        analysis_html = analysis_text.replace('\n', '<br>')
-        
-        return jsonify({"analysis": analysis_html})
-    
-    except Exception as e:
-        print(f"Analyze error: {str(e)}")
-        return jsonify({"error": f"Error: {str(e)}"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
