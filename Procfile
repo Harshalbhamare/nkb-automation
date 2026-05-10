@@ -1,1 +1,1 @@
-web: gunicorn --timeout 200 --workers 1 app:app
+if time.time() - cached_time < 3600:
