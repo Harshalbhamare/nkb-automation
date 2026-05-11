@@ -8,411 +8,114 @@ import pytz
 import atexit
 
 app = Flask(__name__)
-
 scheduler = BackgroundScheduler()
 
 def daily_pre_fetch():
     try:
         ist = pytz.timezone('Asia/Kolkata')
         yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
-        print(f"\n⏰ [SCHEDULER] Starting daily pre-fetch for {yesterday}...")
+        print(f"⏰ Daily pre-fetch for {yesterday}...")
         fetch_stores_by_date(yesterday, yesterday)
-        print(f"✅ [SCHEDULER] Daily pre-fetch complete")
+        print(f"✅ Daily pre-fetch complete")
     except Exception as e:
-        print(f"❌ [SCHEDULER] Pre-fetch failed: {str(e)}")
+        print(f"❌ Pre-fetch failed: {str(e)}")
 
 scheduler.add_job(daily_pre_fetch, 'cron', hour=0, minute=1, timezone='Asia/Kolkata')
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def home():
-    return '''<!DOCTYPE html>
-<html>
+    return """<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NKB Close Cash Report</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { height: 100%; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
-            background: #f5f5f5;
-            color: #1a1a1a;
-        }
-        .container { 
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        .header {
-            background: linear-gradient(135deg, #8b6914 0%, #c99a6e 100%);
-            padding: 24px 16px;
-            color: white;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .header h1 { 
-            font-size: 28px;
-            margin-bottom: 4px;
-            font-weight: 600;
-        }
-        .header p {
-            font-size: 13px;
-            opacity: 0.9;
-        }
-        .controls {
-            padding: 20px 16px;
-            background: #fafafa;
-            border-bottom: 1px solid #e0e0e0;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-        .controls-title {
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            color: #666;
-            margin-bottom: 12px;
-        }
-        .button-group {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        button {
-            padding: 10px 16px;
-            border: 1px solid #d4a574;
-            background: white;
-            color: #8b6914;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            flex: 1;
-            min-width: 100px;
-        }
-        button:hover {
-            background: #f5f5f5;
-            border-color: #8b6914;
-        }
-        button.active {
-            background: #8b6914;
-            color: white;
-            border-color: #8b6914;
-        }
-        input[type="date"] {
-            padding: 10px 12px;
-            border: 1px solid #d0d0d0;
-            border-radius: 6px;
-            font-size: 12px;
-            flex: 1;
-            min-width: 130px;
-        }
-        .report-container {
-            flex: 1;
-            padding: 20px 16px;
-            overflow: auto;
-        }
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #999;
-        }
-        .empty-state-icon {
-            font-size: 48px;
-            margin-bottom: 16px;
-        }
-        .report-header {
-            text-align: center;
-            margin-bottom: 24px;
-            padding-bottom: 16px;
-            border-bottom: 2px solid #8b6914;
-        }
-        .report-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: #1a1a1a;
-            margin-bottom: 4px;
-        }
-        .cache-badge {
-            display: inline-block;
-            background: #d4edda;
-            color: #155724;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            margin-top: 8px;
-            font-weight: 600;
-        }
-        .store-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
-        @media (min-width: 640px) {
-            .store-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-        @media (min-width: 1024px) {
-            .store-grid { grid-template-columns: repeat(3, 1fr); }
-        }
-        .store-card {
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            background: white;
-            overflow: hidden;
-        }
-        .store-header {
-            background: #f9f9f9;
-            padding: 12px 14px;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        .store-name {
-            font-weight: 600;
-            font-size: 14px;
-            color: #1a1a1a;
-            margin: 0;
-        }
-        .store-body {
-            padding: 14px;
-        }
-        .data-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #f5f5f5;
-            font-size: 13px;
-        }
-        .data-value {
-            color: #2d5016;
-            font-weight: 600;
-            font-family: Courier New, monospace;
-            text-align: right;
-        }
-        .remark-section {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid #f5f5f5;
-        }
-        .remark-label {
-            font-size: 11px;
-            color: #999;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-            font-weight: 600;
-        }
-        .remark-text {
-            font-size: 12px;
-            color: #666;
-            background: #fafafa;
-            padding: 8px;
-            border-radius: 4px;
-        }
-        .summary {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin-bottom: 24px;
-        }
-        @media (min-width: 768px) {
-            .summary { grid-template-columns: repeat(5, 1fr); }
-        }
-        .summary-item {
-            padding: 16px;
-            background: #fafafa;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            text-align: center;
-        }
-        .summary-label {
-            font-size: 11px;
-            color: #999;
-            text-transform: uppercase;
-            margin-bottom: 6px;
-            font-weight: 600;
-        }
-        .summary-value {
-            font-size: 18px;
-            font-weight: 700;
-            color: #2d5016;
-            font-family: Courier New, monospace;
-        }
-        .summary-item:last-child .summary-value {
-            color: #c62828;
-        }
-        .ai-section {
-            margin-top: 24px;
-            padding: 20px;
-            background: linear-gradient(135deg, #f0f4ff 0%, #f9f5ff 100%);
-            border: 1px solid #e0d5ff;
-            border-radius: 8px;
-        }
-        .ai-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
-        }
-        .ai-header h3 {
-            font-size: 14px;
-            font-weight: 600;
-            color: #5b21b6;
-            margin: 0;
-        }
-        .ai-button {
-            background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            width: auto;
-        }
-        .ai-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
-        }
-        .loading {
-            text-align: center;
-            padding: 40px 20px;
-            color: #666;
-        }
-        .spinner {
-            border: 3px solid #f0f0f0;
-            border-top: 3px solid #8b6914;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 16px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .error {
-            background: #ffebee;
-            color: #c62828;
-            padding: 16px;
-            border-radius: 6px;
-            margin: 20px;
-            border-left: 4px solid #c62828;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NKB Close Cash</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; margin: 0; }
+.container { max-width: 1200px; margin: 0 auto; background: white; min-height: 100vh; }
+.header { background: linear-gradient(135deg, #8b6914, #c99a6e); color: white; padding: 24px 16px; text-align: center; }
+.header h1 { margin: 0; font-size: 28px; }
+.controls { padding: 20px 16px; background: #fafafa; border-bottom: 1px solid #e0e0e0; }
+.button-group { display: flex; gap: 8px; flex-wrap: wrap; }
+button { padding: 10px 16px; border: 1px solid #d4a574; background: white; color: #8b6914; border-radius: 6px; font-weight: 600; cursor: pointer; }
+button:hover { background: #f0f0f0; }
+button.active { background: #8b6914; color: white; }
+input[type="date"] { padding: 10px 12px; border: 1px solid #d0d0d0; border-radius: 6px; }
+#report { padding: 20px 16px; min-height: 300px; }
+.empty-state { text-align: center; padding: 60px 20px; color: #999; }
+.store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin: 20px 0; }
+.store-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; }
+.store-name { font-weight: 600; margin-bottom: 12px; }
+.data-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+.summary-item { background: #fafafa; padding: 16px; border-radius: 8px; text-align: center; }
+.summary-value { font-size: 18px; font-weight: 700; color: #2d5016; }
+.loading { text-align: center; padding: 40px; }
+.error { background: #ffebee; color: #c62828; padding: 16px; border-radius: 6px; margin: 20px; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📊 NKB Close Cash</h1>
-            <p>Real-time sales & expense report</p>
-        </div>
+<div class="container">
+<div class="header">
+<h1>📊 NKB Close Cash</h1>
+<p>Real-time sales & expense report</p>
+</div>
 
-        <div class="controls">
-            <div class="controls-title">Select Date Range</div>
-            <div class="button-group">
-                <button onclick="generateReport('yesterday')" id="btn-yesterday">📅 Yesterday</button>
-                <button onclick="generateReport('mtd')" id="btn-mtd">📊 Month to Date</button>
-                <input type="date" id="customDate" onchange="generateReport('custom')" />
-            </div>
-        </div>
+<div class="controls">
+<div style="font-size: 11px; font-weight: 600; color: #666; margin-bottom: 12px; text-transform: uppercase;">Select Date Range</div>
+<div class="button-group">
+<button id="btn-yesterday" onclick="loadReport('yesterday')">📅 Yesterday</button>
+<button id="btn-mtd" onclick="loadReport('mtd')">📊 Month to Date</button>
+<input type="date" id="customDate" onchange="loadReport('custom')" />
+</div>
+</div>
 
-        <div class="report-container" id="report">
-            <div class="empty-state">
-                <div class="empty-state-icon">📋</div>
-                <div style="font-size: 18px; font-weight: 600; color: #666; margin-bottom: 8px;">Select a date range</div>
-                <div style="font-size: 13px; color: #999;">Click a button above to view close cash report</div>
-            </div>
-        </div>
-    </div>
+<div id="report">
+<div class="empty-state">
+<div style="font-size: 48px; margin-bottom: 16px;">📋</div>
+<div style="font-size: 18px; font-weight: 600; color: #666;">Select a date range</div>
+</div>
+</div>
+</div>
 
-    <script>
-        let currentReportData = null;
-        
-        function updateButtons(active) {
-            document.querySelectorAll('button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            if (active === 'yesterday') document.getElementById('btn-yesterday').classList.add('active');
-            if (active === 'mtd') document.getElementById('btn-mtd').classList.add('active');
+<script>
+function loadReport(range) {
+    const rep = document.getElementById('report');
+    rep.innerHTML = '<div class="loading">Fetching data...</div>';
+    
+    let url = '/report?range=' + range;
+    if (range === 'custom') {
+        const d = document.getElementById('customDate').value;
+        if (!d) {
+            rep.innerHTML = '<div class="empty-state">Please select a date</div>';
+            return;
         }
-        
-        async function generateReport(range) {
-            const report = document.getElementById('report');
-            report.innerHTML = '<div class="loading"><div class="spinner"></div><p>Fetching from 13 stores...</p></div>';
-            
-            let url = '/report?range=' + range;
-            if (range === 'custom') {
-                const date = document.getElementById('customDate').value;
-                if (!date) {
-                    report.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div>Please select a date</div></div>';
-                    return;
-                }
-                url = '/report?range=custom&date=' + date;
-            }
-            
-            updateButtons(range);
-            
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
-                currentReportData = data;
-                report.innerHTML = data.html;
-            } catch (e) {
-                report.innerHTML = '<div class="error">Error: ' + e.message + '</div>';
-            }
-        }
-        
-        function shareWithClaude() {
-            if (!currentReportData) {
-                alert('Please load a report first by clicking a date button');
-                return;
-            }
-            
-            const totals = currentReportData.data.totals;
-            const stores = currentReportData.data.stores;
-            const date = currentReportData.data.date;
-            
-            let storesText = stores.map(s => {
-                if (s.entries > 0) {
-                    return s.store + ': Sale ₹' + s.sale.toLocaleString('en-IN') + ', Expense ₹' + s.expense.toLocaleString('en-IN') + ', Cash ₹' + s.cash.toLocaleString('en-IN') + ', Card ₹' + s.card.toLocaleString('en-IN') + ', UPI ₹' + s.upi.toLocaleString('en-IN');
-                }
-                return null;
-            }).filter(s => s !== null).join('\n');
-            
-            const prompt = 'Analyze this NKB Store Close Cash report for ' + date + ':\n\nSUMMARY:\n- Total Sale: ₹' + totals.sale.toLocaleString('en-IN') + '\n- Total Expense: ₹' + totals.expense.toLocaleString('en-IN') + ' (' + ((totals.expense / totals.sale) * 100).toFixed(1) + '% of sales)\n- Net Collection: ₹' + totals.net_collection.toLocaleString('en-IN') + '\n  - Cash: ₹' + totals.cash.toLocaleString('en-IN') + '\n  - Card: ₹' + totals.card.toLocaleString('en-IN') + '\n  - UPI: ₹' + totals.upi.toLocaleString('en-IN') + '\n\nSTORE-WISE BREAKDOWN:\n' + storesText + '\n\nPlease provide:\n1. Key findings (2-3 points about performance)\n2. Stores that need attention\n3. Expense observations\n4. Recommendations (2-3 actionable items)';
-            
-            navigator.clipboard.writeText(prompt).then(() => {
-                window.open('https://claude.ai', '_blank');
-                alert('Report data copied to clipboard!\\nPaste it into Claude to get AI insights.');
-            }).catch(() => {
-                window.open('https://claude.ai', '_blank');
-            });
-        }
-    </script>
+        url = '/report?range=custom&date=' + d;
+    }
+    
+    document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    if (range === 'yesterday') document.getElementById('btn-yesterday').classList.add('active');
+    if (range === 'mtd') document.getElementById('btn-mtd').classList.add('active');
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(d => {
+            rep.innerHTML = d.html;
+        })
+        .catch(e => {
+            rep.innerHTML = '<div class="error">Error: ' + e.message + '</div>';
+        });
+}
+</script>
 </body>
-</html>'''
+</html>"""
 
-@app.route('/report', methods=['GET'])
-def view_report():
+@app.route('/report')
+def report():
     try:
         range_type = request.args.get('range', 'yesterday')
-        custom_date = request.args.get('date', None)
+        custom_date = request.args.get('date')
         
         ist = pytz.timezone('Asia/Kolkata')
         today = datetime.now(ist).strftime('%d-%m-%Y')
@@ -424,14 +127,9 @@ def view_report():
             today_obj = datetime.now(ist)
             start_date = f"01-{today_obj.strftime('%m-%Y')}"
             end_date = today
-        elif range_type == 'custom':
-            if not custom_date:
-                return jsonify({"error": "No date provided"})
-            try:
-                custom_date_obj = datetime.strptime(custom_date, '%Y-%m-%d')
-                start_date = end_date = custom_date_obj.strftime('%d-%m-%Y')
-            except:
-                return jsonify({"error": "Invalid date format"})
+        elif range_type == 'custom' and custom_date:
+            custom_date_obj = datetime.strptime(custom_date, '%Y-%m-%d')
+            start_date = end_date = custom_date_obj.strftime('%d-%m-%Y')
         else:
             yesterday = (datetime.now(ist) - timedelta(days=1)).strftime('%d-%m-%Y')
             start_date = end_date = yesterday
@@ -440,49 +138,36 @@ def view_report():
         
         display_date = start_date if start_date == end_date else f"{start_date} to {end_date}"
         
-        html = f'<div class="report-header"><div class="report-title">Close Cash Report</div><div style="font-size: 13px; color: #666; font-weight: 500;">{display_date}</div></div>'
+        html = f"<div style='text-align: center; margin-bottom: 20px; border-bottom: 2px solid #8b6914; padding-bottom: 16px;'><div style='font-size: 20px; font-weight: 600;'>Close Cash Report</div><div style='font-size: 13px; color: #666;'>{display_date}</div></div>"
         
-        successful = sum(1 for item in report_data if item['entries'] > 0)
-        
-        if successful < 13:
-            html += f'<div style="background: #e3f2fd; color: #1565c0; padding: 12px; border-radius: 6px; margin-bottom: 16px; border-left: 4px solid #1565c0; font-size: 12px;">⚠️ Partial data: {successful}/13 stores loaded.</div>'
-        else:
-            html += '<div class="cache-badge">✅ Complete data cached</div>'
-        
-        html += '<div class="store-grid">'
-        
+        html += "<div class='store-grid'>"
         for item in report_data:
             remark = item.get('remark', '-') or '-'
-            if item['entries'] > 0:
-                html += f'<div class="store-card"><div class="store-header"><p class="store-name">{item["store"]}</p></div><div class="store-body"><div class="data-row"><span>Cash</span><span class="data-value">₹{item["cash"]:,.0f}</span></div><div class="data-row"><span>Card</span><span class="data-value">₹{item["card"]:,.0f}</span></div><div class="data-row"><span>UPI</span><span class="data-value">₹{item["upi"]:,.0f}</span></div><div class="data-row"><span>Sale</span><span class="data-value" style="color: #8b6914; font-size: 14px;">₹{item["sale"]:,.0f}</span></div><div class="data-row"><span>Expense</span><span class="data-value">₹{item["expense"]:,.0f}</span></div><div class="remark-section"><div class="remark-label">Remark</div><div class="remark-text">{remark}</div></div></div></div>'
-            else:
-                html += f'<div class="store-card"><div class="store-header"><p class="store-name">{item["store"]}</p></div><div style="text-align: center; color: #aaa; padding: 20px 14px; font-size: 13px;">No data</div></div>'
+            html += f"""<div class="store-card">
+<div class="store-name">{item['store']}</div>
+<div class="data-row"><span>Cash</span><span style="font-weight: 600;">₹{item['cash']:,.0f}</span></div>
+<div class="data-row"><span>Card</span><span style="font-weight: 600;">₹{item['card']:,.0f}</span></div>
+<div class="data-row"><span>UPI</span><span style="font-weight: 600;">₹{item['upi']:,.0f}</span></div>
+<div class="data-row"><span>Sale</span><span style="font-weight: 600; color: #8b6914;">₹{item['sale']:,.0f}</span></div>
+<div class="data-row"><span>Expense</span><span style="font-weight: 600;">₹{item['expense']:,.0f}</span></div>
+<div style="margin-top: 8px; font-size: 11px; color: #666; background: #f9f9f9; padding: 6px; border-radius: 4px;">Remark: {remark}</div>
+</div>"""
+        html += "</div>"
         
-        html += '</div>'
+        net = total_cash + total_card + total_upi
+        exp_pct = (total_expense / total_sale * 100) if total_sale > 0 else 0
         
-        net_collection = total_cash + total_card + total_upi
-        expense_pct = (total_expense / total_sale * 100) if total_sale > 0 else 0
+        html += f"""<div class="summary">
+<div class="summary-item"><div style="font-size: 11px; color: #999; text-transform: uppercase; margin-bottom: 6px;">Total Cash</div><div class="summary-value">₹{total_cash:,.0f}</div></div>
+<div class="summary-item"><div style="font-size: 11px; color: #999; text-transform: uppercase; margin-bottom: 6px;">Total Card</div><div class="summary-value">₹{total_card:,.0f}</div></div>
+<div class="summary-item"><div style="font-size: 11px; color: #999; text-transform: uppercase; margin-bottom: 6px;">Total UPI</div><div class="summary-value">₹{total_upi:,.0f}</div></div>
+<div class="summary-item"><div style="font-size: 11px; color: #999; text-transform: uppercase; margin-bottom: 6px;">Net Collection</div><div class="summary-value">₹{net:,.0f}</div></div>
+<div class="summary-item"><div style="font-size: 11px; color: #999; text-transform: uppercase; margin-bottom: 6px;">Total Expense</div><div class="summary-value" style="color: #c62828;">₹{total_expense:,.0f} ({exp_pct:.1f}%)</div></div>
+</div>"""
         
-        html += f'<div class="summary"><div class="summary-item"><div class="summary-label">Total Cash</div><div class="summary-value">₹{total_cash:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total Card</div><div class="summary-value">₹{total_card:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total UPI</div><div class="summary-value">₹{total_upi:,.0f}</div></div><div class="summary-item"><div class="summary-label">Net Collection</div><div class="summary-value">₹{net_collection:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total Expense</div><div class="summary-value">₹{total_expense:,.0f} ({expense_pct:.1f}%)</div></div></div><div class="ai-section"><div class="ai-header"><h3>✨ Claude AI Analysis</h3><button class="ai-button" onclick="shareWithClaude()">Share with Claude</button></div><p style="font-size: 11px; color: #666; margin-top: 8px;">Click above to send this report to Claude for AI-powered insights.</p></div>'
-        
-        return jsonify({
-            "html": html,
-            "data": {
-                "date": display_date,
-                "stores": report_data,
-                "totals": {
-                    "cash": total_cash,
-                    "card": total_card,
-                    "upi": total_upi,
-                    "sale": total_sale,
-                    "expense": total_expense,
-                    "net_collection": net_collection
-                }
-            }
-        })
-    
+        return jsonify({"html": html})
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"html": f"<div class='error'>Error: {str(e)}</div>"})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
