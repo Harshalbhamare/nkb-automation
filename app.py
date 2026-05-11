@@ -27,7 +27,7 @@ atexit.register(lambda: scheduler.shutdown())
 
 @app.route('/', methods=['GET'])
 def home():
-    return """<!DOCTYPE html>
+    return '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -37,7 +37,7 @@ def home():
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; }
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
             background: #f5f5f5;
             color: #1a1a1a;
         }
@@ -197,7 +197,7 @@ def home():
         .data-value {
             color: #2d5016;
             font-weight: 600;
-            font-family: 'Courier New', monospace;
+            font-family: Courier New, monospace;
             text-align: right;
         }
         .remark-section {
@@ -246,7 +246,7 @@ def home():
             font-size: 18px;
             font-weight: 700;
             color: #2d5016;
-            font-family: 'Courier New', monospace;
+            font-family: Courier New, monospace;
         }
         .summary-item:last-child .summary-value {
             color: #c62828;
@@ -306,21 +306,13 @@ def home():
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .timestamp {
-            text-align: center;
-            padding: 20px 16px;
-            border-top: 1px solid #e0e0e0;
-            color: #999;
-            font-size: 12px;
-        }
-        .info {
-            background: #e3f2fd;
-            color: #1565c0;
-            padding: 12px;
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 16px;
             border-radius: 6px;
-            margin-bottom: 16px;
-            border-left: 4px solid #1565c0;
-            font-size: 12px;
+            margin: 20px;
+            border-left: 4px solid #c62828;
         }
     </style>
 </head>
@@ -382,7 +374,7 @@ def home():
                 currentReportData = data;
                 report.innerHTML = data.html;
             } catch (e) {
-                report.innerHTML = '<div class="info">Error: ' + e.message + '</div>';
+                report.innerHTML = '<div class="error">Error: ' + e.message + '</div>';
             }
         }
         
@@ -410,12 +402,11 @@ def home():
                 alert('Report data copied to clipboard!\\nPaste it into Claude to get AI insights.');
             }).catch(() => {
                 window.open('https://claude.ai', '_blank');
-                alert('Please paste this data into Claude:\\n\\n' + prompt.substring(0, 100) + '...');
             });
         }
     </script>
 </body>
-</html>"""
+</html>'''
 
 @app.route('/report', methods=['GET'])
 def view_report():
@@ -454,7 +445,7 @@ def view_report():
         successful = sum(1 for item in report_data if item['entries'] > 0)
         
         if successful < 13:
-            html += f'<div class="info">⚠️ Partial data: {successful}/13 stores loaded.</div>'
+            html += f'<div style="background: #e3f2fd; color: #1565c0; padding: 12px; border-radius: 6px; margin-bottom: 16px; border-left: 4px solid #1565c0; font-size: 12px;">⚠️ Partial data: {successful}/13 stores loaded.</div>'
         else:
             html += '<div class="cache-badge">✅ Complete data cached</div>'
         
@@ -472,7 +463,7 @@ def view_report():
         net_collection = total_cash + total_card + total_upi
         expense_pct = (total_expense / total_sale * 100) if total_sale > 0 else 0
         
-        html += f'<div class="summary"><div class="summary-item"><div class="summary-label">Total Cash</div><div class="summary-value">₹{total_cash:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total Card</div><div class="summary-value">₹{total_card:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total UPI</div><div class="summary-value">₹{total_upi:,.0f}</div></div><div class="summary-item"><div class="summary-label">Net Collection</div><div class="summary-value">₹{net_collection:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total Expense</div><div class="summary-value">₹{total_expense:,.0f} ({expense_pct:.1f}%)</div></div></div><div class="ai-section"><div class="ai-header"><h3>✨ Claude AI Analysis</h3><button class="ai-button" onclick="shareWithClaude()">Share with Claude</button></div><p style="font-size: 11px; color: #666; margin-top: 8px;">Click above to send this report to Claude for AI-powered insights.</p></div><div class="timestamp">Generated: {datetime.now(ist).strftime("%d-%m-%Y %H:%M IST")}</div>'
+        html += f'<div class="summary"><div class="summary-item"><div class="summary-label">Total Cash</div><div class="summary-value">₹{total_cash:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total Card</div><div class="summary-value">₹{total_card:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total UPI</div><div class="summary-value">₹{total_upi:,.0f}</div></div><div class="summary-item"><div class="summary-label">Net Collection</div><div class="summary-value">₹{net_collection:,.0f}</div></div><div class="summary-item"><div class="summary-label">Total Expense</div><div class="summary-value">₹{total_expense:,.0f} ({expense_pct:.1f}%)</div></div></div><div class="ai-section"><div class="ai-header"><h3>✨ Claude AI Analysis</h3><button class="ai-button" onclick="shareWithClaude()">Share with Claude</button></div><p style="font-size: 11px; color: #666; margin-top: 8px;">Click above to send this report to Claude for AI-powered insights.</p></div>'
         
         return jsonify({
             "html": html,
